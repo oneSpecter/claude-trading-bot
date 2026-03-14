@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 import logging
 from datetime import datetime, timedelta
+from pathlib import Path
 
 log = logging.getLogger("MT5Mock")
 
@@ -19,6 +20,61 @@ log = logging.getLogger("MT5Mock")
 _mock_balance = 10000.0
 _mock_positions = []
 _mock_trade_counter = 1000
+
+
+def _load_csv(filepath: str, count: int) -> "pd.DataFrame | None":
+    """
+    Carica candele da file CSV con dati storici reali.
+
+    Formati supportati:
+      MT5 export standard:  Date,Time,Open,High,Low,Close,Volume
+      MT5 con brackets:     <DATE>,<TIME>,<OPEN>,<HIGH>,<LOW>,<CLOSE>,<VOL>
+      Colonna singola:      datetime,open,high,low,close,volume
+    """
+    try:
+        df = pd.read_csv(filepath)
+        # Normalizza nomi colonne (minuscolo, rimuovi < >)
+        df.columns = [c.strip().strip('<>').lower() for c in df.columns]
+
+        # Costruisci indice datetime
+        if 'date' in df.columns and 'time' in df.columns:
+            df['_dt'] = pd.to_datetime(df['date'].astype(str) + ' ' + df['time'].astype(str))
+            df = df.drop(columns=['date', 'time'])
+        elif 'datetime' in df.columns:
+            df['_dt'] = pd.to_datetime(df['datetime'])
+            df = df.drop(columns=['datetime'])
+        else:
+            # Prima colonna come datetime
+            df['_dt'] = pd.to_datetime(df.iloc[:, 0])
+            df = df.iloc[:, 1:]
+
+        df = df.set_index('_dt').sort_index()
+
+        # Rinomina alias comuni
+        aliases = {
+            'o': 'open', 'h': 'high', 'l': 'low', 'c': 'close',
+            'tickvol': 'volume', 'vol': 'volume', 'tick_volume': 'volume',
+        }
+        df = df.rename(columns={k: v for k, v in aliases.items() if k in df.columns})
+
+        required = ['open', 'high', 'low', 'close']
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            log.warning(f"[MOCK CSV] Colonne mancanti {missing} — colonne trovate: {list(df.columns)}")
+            return None
+
+        if 'volume' not in df.columns:
+            df['volume'] = 1000
+
+        df = df[['open', 'high', 'low', 'close', 'volume']].dropna()
+        result = df.tail(count)
+        log.info(f"[MOCK CSV] {len(result)} candele caricate da {filepath} | "
+                 f"Close={result['close'].iloc[-1]:.5f}")
+        return result
+
+    except Exception as e:
+        log.warning(f"[MOCK CSV] Errore caricamento {filepath}: {e}")
+        return None
 
 
 def connect() -> bool:
@@ -30,8 +86,23 @@ def disconnect():
     log.info("[MOCK] Disconnessione MT5 simulata.")
 
 
-def get_candles(count: int = 150) -> pd.DataFrame:
-    """Genera candele EURUSD realistiche con trend e rumore."""
+def get_candles(count: int = 150, timeframe: str = "H1") -> pd.DataFrame:
+    """
+    Restituisce candele per il mock.
+    Se MOCK_DATA_FILE è configurato e il file esiste → carica dati storici reali.
+    Altrimenti → genera dati sintetici random.
+    """
+    try:
+        from config import MOCK_DATA_FILE
+        if MOCK_DATA_FILE and Path(MOCK_DATA_FILE).exists():
+            df = _load_csv(MOCK_DATA_FILE, count)
+            if df is not None:
+                return df
+            log.warning("[MOCK CSV] Fallback a dati sintetici")
+    except Exception:
+        pass
+
+    # ── Generazione sintetica ────────────────────────────────────
     np.random.seed(int(datetime.utcnow().timestamp()) % 1000)
     n = count
 

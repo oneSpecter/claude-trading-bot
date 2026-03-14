@@ -11,7 +11,9 @@ import numpy as np
 from config import (
     EMA_FAST, EMA_SLOW, RSI_PERIOD, ATR_PERIOD,
     REQUIRE_EMA_CROSS, REQUIRE_RSI_ALIGNED,
-    RSI_BULL_THRESHOLD, RSI_BEAR_THRESHOLD
+    RSI_BULL_THRESHOLD, RSI_BEAR_THRESHOLD,
+    ADX_PERIOD, ADX_THRESHOLD, REQUIRE_ADX,
+    REQUIRE_H4_CONFIRM,
 )
 
 
@@ -66,7 +68,50 @@ def compute_all(df: pd.DataFrame) -> pd.DataFrame:
     df["candle_body"] = (df["close"] - df["open"]).abs()
     df["candle_dir"]  = np.sign(df["close"] - df["open"])
 
+    # ── ADX (Average Directional Index) ──────────────────────────
+    # Misura la forza del trend (non la direzione).
+    # ADX >= 25 → mercato trending  |  ADX < 25 → ranging / laterale
+    up   = df["high"].diff()
+    down = -df["low"].diff()
+    plus_dm  = np.where((up > down) & (up > 0),   up,   0.0)
+    minus_dm = np.where((down > up) & (down > 0), down, 0.0)
+
+    atr_s    = df["atr"]  # già calcolato sopra
+    plus_di  = 100 * (pd.Series(plus_dm,  index=df.index)
+                        .ewm(com=ADX_PERIOD - 1, min_periods=ADX_PERIOD).mean()
+                      / atr_s.replace(0, np.nan))
+    minus_di = 100 * (pd.Series(minus_dm, index=df.index)
+                        .ewm(com=ADX_PERIOD - 1, min_periods=ADX_PERIOD).mean()
+                      / atr_s.replace(0, np.nan))
+
+    dx = (100 * (plus_di - minus_di).abs()
+               / (plus_di + minus_di).replace(0, np.nan))
+    df["adx"]       = dx.ewm(com=ADX_PERIOD - 1, min_periods=ADX_PERIOD).mean()
+    df["adx_plus"]  = plus_di
+    df["adx_minus"] = minus_di
+
     return df
+
+
+def get_h4_bias(df_h4: pd.DataFrame) -> str:
+    """
+    Calcola il bias direzionale su H4 tramite EMA 9/21.
+    Ritorna 'BULLISH', 'BEARISH' o 'NEUTRAL'.
+    Usato come filtro: non tradare segnali H1 contro il trend H4.
+    """
+    df = df_h4.copy()
+    df["ema_fast"] = df["close"].ewm(span=EMA_FAST, adjust=False).mean()
+    df["ema_slow"] = df["close"].ewm(span=EMA_SLOW, adjust=False).mean()
+    df.dropna(inplace=True)
+    if len(df) == 0:
+        return "NEUTRAL"
+    last = df.iloc[-1]
+    diff = last["ema_fast"] - last["ema_slow"]
+    if diff > 0.00010:
+        return "BULLISH"
+    elif diff < -0.00010:
+        return "BEARISH"
+    return "NEUTRAL"
 
 
 def get_support_resistance(df: pd.DataFrame, lookback: int = 50) -> dict:
@@ -147,7 +192,7 @@ def get_candlestick_patterns(df: pd.DataFrame) -> list[str]:
     return patterns if patterns else ["Nessun pattern rilevante"]
 
 
-def should_call_claude(df: pd.DataFrame) -> tuple[bool, str]:
+def should_call_claude(df: pd.DataFrame, df_h4: pd.DataFrame = None) -> tuple[bool, str]:
     """
     Pre-filtro tecnico: decide se vale la pena chiamare Claude API.
     Risparmia costi evitando chiamate in mercato laterale/piatto.
@@ -176,11 +221,24 @@ def should_call_claude(df: pd.DataFrame) -> tuple[bool, str]:
         if cross_dir == -1 and rsi > RSI_BEAR_THRESHOLD:
             return False, f"Cross ribassista ma RSI troppo alto ({rsi:.1f} > {RSI_BEAR_THRESHOLD})"
 
+    # ADX: salta se il mercato è ranging (falsi segnali EMA)
+    adx = last.get("adx", 0)
+    if REQUIRE_ADX and adx < ADX_THRESHOLD:
+        return False, f"Mercato ranging — ADX={adx:.1f} < {ADX_THRESHOLD} (nessun trend)"
+
+    # H4 trend filter: non tradare contro il trend principale
+    if REQUIRE_H4_CONFIRM and df_h4 is not None:
+        h4_bias = get_h4_bias(df_h4)
+        if cross_dir == 1 and h4_bias == "BEARISH":
+            return False, f"Cross H1 rialzista ma H4 ribassista — contro-trend, skip"
+        if cross_dir == -1 and h4_bias == "BULLISH":
+            return False, f"Cross H1 ribassista ma H4 rialzista — contro-trend, skip"
+
     direction = "LONG" if cross_dir == 1 else "SHORT"
-    return True, f"Setup {direction} rilevato — RSI={rsi:.1f}, ATR={last['atr']:.5f}"
+    return True, f"Setup {direction} rilevato — RSI={rsi:.1f}, ADX={adx:.1f}, ATR={last['atr']:.5f}"
 
 
-def build_technical_summary(df: pd.DataFrame) -> dict:
+def build_technical_summary(df: pd.DataFrame, df_h4: pd.DataFrame = None) -> dict:
     """
     Costruisce un dizionario con TUTTO il contesto tecnico
     da passare a Claude come prompt.
@@ -194,7 +252,7 @@ def build_technical_summary(df: pd.DataFrame) -> dict:
     patt  = get_candlestick_patterns(df)
 
     # Ultime 10 candele come mini-tabella
-    last10 = df.tail(10)[["open", "high", "low", "close", "rsi", "atr"]].round(5)
+    last10 = df.tail(10)[["open", "high", "low", "close", "rsi", "adx", "atr"]].round(5)
     candles_str = last10.to_string()
 
     # Trend a breve e medio termine
@@ -229,6 +287,11 @@ def build_technical_summary(df: pd.DataFrame) -> dict:
         "candlestick_patterns": patt,
         "cross_signal":   cross_signal,
         "last_10_candles": candles_str,
+        "adx":            round(float(last["adx"]),       1),
+        "adx_plus":       round(float(last["adx_plus"]),  1),
+        "adx_minus":      round(float(last["adx_minus"]), 1),
+        "adx_trend":      "TRENDING" if last["adx"] >= ADX_THRESHOLD else "RANGING",
+        "h4_bias": get_h4_bias(df_h4) if df_h4 is not None else "N/A",
         "atr_sl":  round(float(last["close"] - last["atr"] * 1.5), 5),
         "atr_tp":  round(float(last["close"] + last["atr"] * 2.5), 5),
         "atr_sl_short": round(float(last["close"] + last["atr"] * 1.5), 5),

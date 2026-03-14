@@ -20,10 +20,15 @@ Avvio:
 
 import sys
 import time
+import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
-from config import CHECK_INTERVAL, MAX_OPEN_TRADES, SYMBOL, TIMEFRAME, ANTHROPIC_API_KEY
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+from pathlib import Path
+
+from config import CHECK_INTERVAL, MAX_OPEN_TRADES, SYMBOL, TIMEFRAME, ANTHROPIC_API_KEY, H4_CANDLES_LOAD, USE_MOCK
 
 # Logging setup
 logging.basicConfig(
@@ -37,18 +42,41 @@ logging.basicConfig(
 )
 log = logging.getLogger("ForexAIBot")
 
-# Import broker: usa MT5 reale su Windows, mock altrimenti
-try:
-    import MetaTrader5
-    import mt5_broker as broker
-    log.info("MetaTrader5 rilevato — uso broker reale")
-except ImportError:
+# Import broker:
+#   --dry o USE_MOCK=true → mock sempre (nessuna connessione MT5)
+#   altrimenti            → MT5 reale se disponibile, mock come fallback
+_force_mock = USE_MOCK or "--dry" in sys.argv
+if _force_mock:
     import mt5_mock as broker
-    log.warning("MetaTrader5 non disponibile — uso mock (solo sviluppo/test)")
+    log.info("Mock broker attivo — nessuna connessione MT5 richiesta")
+else:
+    try:
+        import MetaTrader5
+        import mt5_broker as broker
+        log.info("MetaTrader5 rilevato — uso broker reale")
+    except ImportError:
+        import mt5_mock as broker
+        log.warning("MetaTrader5 non disponibile — uso mock automatico")
 
 from indicators import compute_all, should_call_claude, build_technical_summary
 from claude_analyst import analyze
 from journal import log_decision, print_stats
+
+
+STATUS_FILE = "bot_status.json"
+STOP_FLAG   = Path("bot_stop.flag")
+
+
+def _write_status(data: dict):
+    """Scrive lo stato corrente del bot su file (letto dalla dashboard)."""
+    try:
+        Path(STATUS_FILE).write_text(
+            json.dumps({**data, "timestamp": _utcnow().isoformat()},
+                       ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
 
 
 def banner():
@@ -78,7 +106,9 @@ def tick(dry_run: bool = False) -> bool:
     Singolo ciclo del bot.
     Ritorna True se ha eseguito un trade, False altrimenti.
     """
-    log.info(f"─── Tick {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC ───")
+    log.info(f"─── Tick {_utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC ───")
+    _write_status({"phase": "scanning", "symbol": SYMBOL, "timeframe": TIMEFRAME,
+                   "dry_run": dry_run})
 
     # ── 1. Dati mercato ──────────────────────────────────────────
     try:
@@ -89,8 +119,15 @@ def tick(dry_run: bool = False) -> bool:
 
     log.info(f"Candele caricate: {len(df)} | Close={df['close'].iloc[-1]:.5f}")
 
+    # ── 1b. Candele H4 per il filtro trend principale ─────────────
+    try:
+        df_h4 = broker.get_candles(count=H4_CANDLES_LOAD, timeframe="H4")
+    except Exception as e:
+        log.warning(f"Candele H4 non disponibili: {e} — filtro H4 disabilitato")
+        df_h4 = None
+
     # ── 2. Pre-filtro tecnico (gratuito, nessuna API call) ────────
-    ok, reason = should_call_claude(df)
+    ok, reason = should_call_claude(df, df_h4=df_h4)
     log.info(f"Pre-filtro: {'✅ PASS' if ok else '⏭  SKIP'} — {reason}")
 
     if not ok:
@@ -107,9 +144,22 @@ def tick(dry_run: bool = False) -> bool:
     # ── 4. Build summary tecnico ─────────────────────────────────
     df_ind = compute_all(df)
     df_ind.dropna(inplace=True)
-    tech = build_technical_summary(df_ind)
+    tech = build_technical_summary(df_ind, df_h4=df_h4)
 
-    log.info(f"Setup tecnico: EMA_trend={tech['ema_trend']} RSI={tech['rsi']} ATR={tech['atr']}")
+    log.info(f"Setup tecnico: EMA_trend={tech['ema_trend']} RSI={tech['rsi']} "
+             f"ADX={tech['adx']} ({tech['adx_trend']}) ATR={tech['atr']}")
+    _write_status({
+        "phase":      "analyzing",
+        "symbol":     SYMBOL,
+        "timeframe":  TIMEFRAME,
+        "dry_run":    dry_run,
+        "price":      tech.get("price"),
+        "ema_trend":  tech.get("ema_trend"),
+        "rsi":        tech.get("rsi"),
+        "adx":        tech.get("adx"),
+        "adx_trend":  tech.get("adx_trend"),
+        "h4_bias":    tech.get("h4_bias"),
+    })
 
     # ── 5. Claude AI (3 stadi) ───────────────────────────────────
     try:
@@ -155,6 +205,23 @@ def tick(dry_run: bool = False) -> bool:
     # ── 7. Journal ───────────────────────────────────────────────
     log_decision(decision, tech, executed, trade_res)
 
+    _write_status({
+        "phase":           "idle",
+        "symbol":          SYMBOL,
+        "timeframe":       TIMEFRAME,
+        "dry_run":         dry_run,
+        "price":           tech.get("price"),
+        "ema_trend":       tech.get("ema_trend"),
+        "rsi":             tech.get("rsi"),
+        "adx":             tech.get("adx"),
+        "adx_trend":       tech.get("adx_trend"),
+        "h4_bias":         tech.get("h4_bias"),
+        "last_decision":   decision.get("decision"),
+        "last_confidence": decision.get("confidence"),
+        "last_regime":     decision.get("market_regime"),
+        "web_search_done": decision.get("web_search_done", False),
+        "tech_score_s1":   decision.get("tech_score_s1"),
+    })
     return executed
 
 
@@ -178,10 +245,13 @@ def main():
     if run_once:
         log.info("Modalità ONE-SHOT: eseguo un solo ciclo")
 
-    # Connessione MT5
-    if not broker.connect():
-        log.error("Impossibile connettersi a MT5. Controlla le credenziali in config.py")
-        sys.exit(1)
+    # Connessione MT5 (saltata in mock mode)
+    if not _force_mock:
+        if not broker.connect():
+            log.error("Impossibile connettersi a MT5. Controlla le credenziali in config.py")
+            sys.exit(1)
+    else:
+        broker.connect()  # no-op nel mock, ma inizializza lo stato interno
 
     try:
         account = broker.get_account_info()
@@ -194,6 +264,10 @@ def main():
 
         log.info(f"Bot avviato. Controllo ogni {CHECK_INTERVAL}s. CTRL+C per fermare.")
         while True:
+            if STOP_FLAG.exists():
+                STOP_FLAG.unlink()
+                log.info("🛑 Stop remoto ricevuto dalla dashboard.")
+                break
             try:
                 tick(dry_run)
             except KeyboardInterrupt:
@@ -202,12 +276,18 @@ def main():
                 log.error(f"Errore nel tick: {e}", exc_info=True)
 
             log.info(f"Prossimo controllo tra {CHECK_INTERVAL}s...")
-            time.sleep(CHECK_INTERVAL)
+            # Controlla lo stop flag ogni 5s invece di dormire CHECK_INTERVAL tutto in una volta
+            deadline = time.time() + CHECK_INTERVAL
+            while time.time() < deadline:
+                if STOP_FLAG.exists():
+                    break
+                time.sleep(5)
 
     except KeyboardInterrupt:
         log.info("Bot fermato. Ciao! 👋")
     finally:
         broker.disconnect()
+        _write_status({"phase": "stopped", "symbol": SYMBOL, "timeframe": TIMEFRAME})
         print_stats()
 
 

@@ -1,0 +1,158 @@
+2026-03-14 21:03:40  WARNING   MetaTrader5 non disponibile — uso mock (solo sviluppo/test)
+2026-03-14 21:03:40  ERROR     ❌ Configurazione mancante: ANTHROPIC_API_KEY non configurata in config.py
+2026-03-14 21:09:20  INFO      MetaTrader5 rilevato — uso broker reale
+2026-03-14 21:09:20  ERROR     ❌ Configurazione mancante: ANTHROPIC_API_KEY non configurata in config.py
+2026-03-14 21:30:18  INFO      MetaTrader5 rilevato — uso broker reale
+2026-03-14 21:30:18  ERROR     Inizializzazione MT5 fallita: (-10003, 'IPC initialize failed, MetaTrader 5 x64 not found')
+2026-03-14 21:30:18  ERROR     Impossibile connettersi a MT5. Controlla le credenziali in config.py
+2026-03-14 21:31:12  INFO      MetaTrader5 rilevato — uso broker reale
+2026-03-14 21:31:12  ERROR     Inizializzazione MT5 fallita: (-10003, 'IPC initialize failed, MetaTrader 5 x64 not found')
+2026-03-14 21:31:12  ERROR     Impossibile connettersi a MT5. Controlla le credenziali in config.py
+2026-03-14 21:37:59  INFO      MetaTrader5 rilevato — uso broker reale
+2026-03-14 21:37:59  INFO      Modalità ONE-SHOT: eseguo un solo ciclo
+2026-03-14 21:37:59  ERROR     Inizializzazione MT5 fallita: (-10003, 'IPC initialize failed, MetaTrader 5 x64 not found')
+2026-03-14 21:37:59  ERROR     Impossibile connettersi a MT5. Controlla le credenziali in config.py
+2026-03-14 21:42:13  WARNING   MetaTrader5 non disponibile — uso mock (solo sviluppo/test)
+2026-03-14 21:42:13  INFO      Modalità ONE-SHOT: eseguo un solo ciclo
+2026-03-14 21:42:13  INFO      [MOCK] Connessione MT5 simulata. Saldo: $10,000 demo
+2026-03-14 21:42:13  INFO      Account: Saldo=10000.00 USD | Leva=100x
+2026-03-14 21:42:13  INFO      ─── Tick 2026-03-14 20:42:13 UTC ───
+2026-03-14 21:42:13  INFO      [MOCK] 150 candele generate | Close=1.08833
+2026-03-14 21:42:13  INFO      Candele caricate: 150 | Close=1.08833
+2026-03-14 21:42:13  INFO      [MOCK] 100 candele generate | Close=1.08653
+2026-03-14 21:42:14  INFO      Pre-filtro: ⏭  SKIP — Nessun crossover EMA recente (EMA_diff=0.00093)
+2026-03-14 21:42:14  INFO      [MOCK] Disconnessione MT5 simulata.
+2026-03-14 22:05:49  INFO      MetaTrader5 rilevato — uso broker reale
+2026-03-14 22:05:49  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-14 22:05:49  ERROR     Inizializzazione MT5 fallita: (-10003, 'IPC initialize failed, MetaTrader 5 x64 not found')
+2026-03-14 22:05:49  ERROR     Impossibile connettersi a MT5. Controlla le credenziali in config.py
+2026-03-14 22:06:17  INFO      MetaTrader5 rilevato — uso broker reale
+2026-03-14 22:06:17  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-14 22:06:17  ERROR     Inizializzazione MT5 fallita: (-10003, 'IPC initialize failed, MetaTrader 5 x64 not found')
+2026-03-14 22:06:17  ERROR     Impossibile connettersi a MT5. Controlla le credenziali in config.py
+2026-03-14 22:07:11  INFO      MetaTrader5 rilevato — uso broker reale
+2026-03-14 22:07:11  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-14 22:07:11  INFO      Modalità ONE-SHOT: eseguo un solo ciclo
+2026-03-14 22:07:11  ERROR     Inizializzazione MT5 fallita: (-10003, 'IPC initialize failed, MetaTrader 5 x64 not found')
+2026-03-14 22:07:11  ERROR     Impossibile connettersi a MT5. Controlla le credenziali in config.py
+2026-03-14 22:11:35  INFO      MetaTrader5 rilevato — uso broker reale
+2026-03-14 22:11:35  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-14 22:11:35  INFO      Modalità ONE-SHOT: eseguo un solo ciclo
+2026-03-14 22:11:35  ERROR     Inizializzazione MT5 fallita: (-10003, 'IPC initialize failed, MetaTrader 5 x64 not found')
+2026-03-14 22:11:35  ERROR     Impossibile connettersi a MT5. Controlla le credenziali in config.py
+2026-03-14 22:11:46  INFO      MetaTrader5 rilevato — uso broker reale
+2026-03-14 22:11:46  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-14 22:11:46  INFO      Modalità ONE-SHOT: eseguo un solo ciclo
+2026-03-14 22:11:46  ERROR     Inizializzazione MT5 fallita: (-10003, 'IPC initialize failed, MetaTrader 5 x64 not found')
+2026-03-14 22:11:46  ERROR     Impossibile connettersi a MT5. Controlla le credenziali in config.py
+2026-03-14 22:12:00  WARNING   MetaTrader5 non disponibile — uso mock (solo sviluppo/test)
+2026-03-14 22:12:01  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-14 22:12:01  INFO      Modalità ONE-SHOT: eseguo un solo ciclo
+2026-03-14 22:12:01  INFO      [MOCK] Connessione MT5 simulata. Saldo: $10,000 demo
+2026-03-14 22:12:01  INFO      Account: Saldo=10000.00 USD | Leva=100x
+2026-03-14 22:12:01  INFO      ─── Tick 2026-03-14 21:12:01 UTC ───
+2026-03-14 22:12:01  INFO      [MOCK] 150 candele generate | Close=1.09538
+2026-03-14 22:12:01  INFO      Candele caricate: 150 | Close=1.09538
+2026-03-14 22:12:01  INFO      [MOCK] 100 candele generate | Close=1.09196
+2026-03-14 22:12:01  INFO      Pre-filtro: ⏭  SKIP — Nessun crossover EMA recente (EMA_diff=0.00135)
+2026-03-14 22:12:01  INFO      [MOCK] Disconnessione MT5 simulata.
+2026-03-14 22:17:02  INFO      Mock broker attivo — nessuna connessione MT5 richiesta
+2026-03-14 22:17:02  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-14 22:17:02  INFO      Modalità ONE-SHOT: eseguo un solo ciclo
+2026-03-14 22:17:02  INFO      [MOCK] Connessione MT5 simulata. Saldo: $10,000 demo
+2026-03-14 22:17:02  INFO      Account: Saldo=10000.00 USD | Leva=100x
+2026-03-14 22:17:02  INFO      ─── Tick 2026-03-14 21:17:02 UTC ───
+2026-03-14 22:17:02  INFO      [MOCK] 150 candele generate | Close=1.09100
+2026-03-14 22:17:02  INFO      Candele caricate: 150 | Close=1.09100
+2026-03-14 22:17:02  INFO      [MOCK] 100 candele generate | Close=1.08919
+2026-03-14 22:17:02  INFO      Pre-filtro: ⏭  SKIP — Nessun crossover EMA recente (EMA_diff=0.00154)
+2026-03-14 22:17:02  INFO      [MOCK] Disconnessione MT5 simulata.
+2026-03-14 22:17:12  INFO      Mock broker attivo — nessuna connessione MT5 richiesta
+2026-03-14 22:17:12  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-14 22:17:12  INFO      [MOCK] Connessione MT5 simulata. Saldo: $10,000 demo
+2026-03-14 22:17:12  INFO      Account: Saldo=10000.00 USD | Leva=100x
+2026-03-14 22:17:12  INFO      Bot avviato. Controllo ogni 300s. CTRL+C per fermare.
+2026-03-14 22:17:12  INFO      ─── Tick 2026-03-14 21:17:12 UTC ───
+2026-03-14 22:17:12  INFO      [MOCK] 150 candele generate | Close=1.08982
+2026-03-14 22:17:12  INFO      Candele caricate: 150 | Close=1.08982
+2026-03-14 22:17:12  INFO      [MOCK] 100 candele generate | Close=1.08858
+2026-03-14 22:17:12  INFO      Pre-filtro: ⏭  SKIP — Nessun crossover EMA recente (EMA_diff=0.00125)
+2026-03-14 22:17:12  INFO      Prossimo controllo tra 300s...
+2026-03-14 22:22:12  INFO      🛑 Stop remoto ricevuto dalla dashboard.
+2026-03-14 22:22:12  INFO      [MOCK] Disconnessione MT5 simulata.
+2026-03-14 22:27:10  INFO      Mock broker attivo — nessuna connessione MT5 richiesta
+2026-03-14 22:27:10  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-14 22:27:10  INFO      [MOCK] Connessione MT5 simulata. Saldo: $10,000 demo
+2026-03-14 22:27:10  INFO      Account: Saldo=10000.00 USD | Leva=100x
+2026-03-14 22:27:10  INFO      Bot avviato. Controllo ogni 300s. CTRL+C per fermare.
+2026-03-14 22:27:10  INFO      ─── Tick 2026-03-14 21:27:10 UTC ───
+2026-03-14 22:27:10  INFO      [MOCK] 150 candele generate | Close=1.09714
+2026-03-14 22:27:10  INFO      Candele caricate: 150 | Close=1.09714
+2026-03-14 22:27:10  INFO      [MOCK] 100 candele generate | Close=1.09121
+2026-03-14 22:27:10  INFO      Pre-filtro: ⏭  SKIP — Nessun crossover EMA recente (EMA_diff=0.00169)
+2026-03-14 22:27:10  INFO      Prossimo controllo tra 300s...
+2026-03-14 22:28:50  INFO      🛑 Stop remoto ricevuto dalla dashboard.
+2026-03-14 22:28:50  INFO      [MOCK] Disconnessione MT5 simulata.
+2026-03-14 22:29:02  INFO      Mock broker attivo — nessuna connessione MT5 richiesta
+2026-03-14 22:29:03  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-14 22:29:03  INFO      [MOCK] Connessione MT5 simulata. Saldo: $10,000 demo
+2026-03-14 22:29:03  INFO      Account: Saldo=10000.00 USD | Leva=100x
+2026-03-14 22:29:03  INFO      Bot avviato. Controllo ogni 300s. CTRL+C per fermare.
+2026-03-14 22:29:03  INFO      ─── Tick 2026-03-14 21:29:03 UTC ───
+2026-03-14 22:29:03  INFO      [MOCK] 150 candele generate | Close=1.09319
+2026-03-14 22:29:03  INFO      Candele caricate: 150 | Close=1.09319
+2026-03-14 22:29:03  INFO      [MOCK] 100 candele generate | Close=1.08975
+2026-03-14 22:29:03  INFO      Pre-filtro: ⏭  SKIP — Nessun crossover EMA recente (EMA_diff=0.00118)
+2026-03-14 22:29:03  INFO      Prossimo controllo tra 300s...
+2026-03-14 22:29:32  INFO      Bot fermato. Ciao! 👋
+2026-03-14 22:29:32  INFO      [MOCK] Disconnessione MT5 simulata.
+2026-03-14 22:29:36  INFO      Mock broker attivo — nessuna connessione MT5 richiesta
+2026-03-14 22:29:36  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-14 22:29:36  INFO      [MOCK] Connessione MT5 simulata. Saldo: $10,000 demo
+2026-03-14 22:29:36  INFO      Account: Saldo=10000.00 USD | Leva=100x
+2026-03-14 22:29:36  INFO      Bot avviato. Controllo ogni 300s. CTRL+C per fermare.
+2026-03-14 22:29:36  INFO      ─── Tick 2026-03-14 21:29:36 UTC ───
+2026-03-14 22:29:36  INFO      [MOCK] 150 candele generate | Close=1.08983
+2026-03-14 22:29:36  INFO      Candele caricate: 150 | Close=1.08983
+2026-03-14 22:29:36  INFO      [MOCK] 100 candele generate | Close=1.08613
+2026-03-14 22:29:36  INFO      Pre-filtro: ⏭  SKIP — Nessun crossover EMA recente (EMA_diff=0.00137)
+2026-03-14 22:29:36  INFO      Prossimo controllo tra 300s...
+2026-03-14 22:29:40  INFO      Bot fermato. Ciao! 👋
+2026-03-14 22:29:40  INFO      [MOCK] Disconnessione MT5 simulata.
+2026-03-14 22:30:24  INFO      Mock broker attivo — nessuna connessione MT5 richiesta
+2026-03-14 22:30:25  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-14 22:30:25  INFO      [MOCK] Connessione MT5 simulata. Saldo: $10,000 demo
+2026-03-14 22:30:25  INFO      Account: Saldo=10000.00 USD | Leva=100x
+2026-03-14 22:30:25  INFO      Bot avviato. Controllo ogni 300s. CTRL+C per fermare.
+2026-03-14 22:30:25  INFO      ─── Tick 2026-03-14 21:30:25 UTC ───
+2026-03-14 22:30:25  INFO      [MOCK] 150 candele generate | Close=1.09074
+2026-03-14 22:30:25  INFO      Candele caricate: 150 | Close=1.09074
+2026-03-14 22:30:25  INFO      [MOCK] 100 candele generate | Close=1.08927
+2026-03-14 22:30:25  INFO      Pre-filtro: ⏭  SKIP — Nessun crossover EMA recente (EMA_diff=0.00116)
+2026-03-14 22:30:25  INFO      Prossimo controllo tra 300s...
+2026-03-14 22:30:48  INFO      Bot fermato. Ciao! 👋
+2026-03-14 22:30:48  INFO      [MOCK] Disconnessione MT5 simulata.
+2026-03-14 22:31:42  INFO      Mock broker attivo — nessuna connessione MT5 richiesta
+2026-03-14 22:31:42  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-14 22:31:42  INFO      [MOCK] Connessione MT5 simulata. Saldo: $10,000 demo
+2026-03-14 22:31:42  INFO      Account: Saldo=10000.00 USD | Leva=100x
+2026-03-14 22:31:42  INFO      Bot avviato. Controllo ogni 300s. CTRL+C per fermare.
+2026-03-14 22:31:42  INFO      ─── Tick 2026-03-14 21:31:42 UTC ───
+2026-03-14 22:31:42  INFO      [MOCK] 150 candele generate | Close=1.08627
+2026-03-14 22:31:42  INFO      Candele caricate: 150 | Close=1.08627
+2026-03-14 22:31:42  INFO      [MOCK] 100 candele generate | Close=1.08632
+2026-03-14 22:31:42  INFO      Pre-filtro: ⏭  SKIP — Nessun crossover EMA recente (EMA_diff=0.00091)
+2026-03-14 22:31:42  INFO      Prossimo controllo tra 300s...
+2026-03-14 22:32:56  INFO      Bot fermato. Ciao! 👋
+2026-03-14 22:32:56  INFO      [MOCK] Disconnessione MT5 simulata.
+2026-03-14 22:38:21  INFO      Mock broker attivo — nessuna connessione MT5 richiesta
+2026-03-14 22:38:21  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-14 22:38:21  INFO      [MOCK] Connessione MT5 simulata. Saldo: $10,000 demo
+2026-03-14 22:38:21  INFO      Account: Saldo=10000.00 USD | Leva=100x
+2026-03-14 22:38:21  INFO      Bot avviato. Controllo ogni 300s. CTRL+C per fermare.
+2026-03-14 22:38:21  INFO      ─── Tick 2026-03-14 21:38:21 UTC ───
+2026-03-14 22:38:21  INFO      [MOCK] 150 candele generate | Close=1.08295
+2026-03-14 22:38:21  INFO      Candele caricate: 150 | Close=1.08295
+2026-03-14 22:38:21  INFO      [MOCK] 100 candele generate | Close=1.08189
+2026-03-14 22:38:21  INFO      Pre-filtro: ⏭  SKIP — Nessun crossover EMA recente (EMA_diff=0.00109)
+2026-03-14 22:38:21  INFO      Prossimo controllo tra 300s...

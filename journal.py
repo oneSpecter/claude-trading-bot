@@ -10,6 +10,7 @@ import csv
 import os
 import logging
 from datetime import datetime
+from config import SYMBOL
 
 log = logging.getLogger("Journal")
 
@@ -53,7 +54,7 @@ def log_decision(decision: dict, tech_summary: dict, executed: bool, trade_resul
     """Salva una decisione nel journal."""
     entry = {
         "timestamp":          datetime.utcnow().isoformat(),
-        "symbol":             "EURUSD",
+        "symbol":             SYMBOL,
         "decision":           decision.get("decision"),
         "confidence":         decision.get("confidence"),
         "price":              tech_summary.get("price"),

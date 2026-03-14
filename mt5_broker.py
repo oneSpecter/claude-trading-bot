@@ -13,7 +13,7 @@ import pandas as pd
 from datetime import datetime
 from config import (
     MT5_LOGIN, MT5_PASSWORD, MT5_SERVER,
-    SYMBOL, TIMEFRAME, CANDLES_LOAD, RISK_PCT
+    SYMBOL, TIMEFRAME, CANDLES_LOAD, H4_CANDLES_LOAD, RISK_PCT
 )
 
 log = logging.getLogger("MT5Broker")
@@ -60,12 +60,12 @@ def disconnect():
         log.info("MT5 disconnesso.")
 
 
-def get_candles(count: int = CANDLES_LOAD) -> pd.DataFrame:
-    """Scarica le ultime N candele chiuse."""
+def get_candles(count: int = CANDLES_LOAD, timeframe: str = TIMEFRAME) -> pd.DataFrame:
+    """Scarica le ultime N candele chiuse per il timeframe specificato."""
     if not MT5_AVAILABLE:
         raise RuntimeError("MT5 non disponibile")
 
-    tf = TF_MAP.get(TIMEFRAME, mt5.TIMEFRAME_H1)
+    tf = TF_MAP.get(timeframe, mt5.TIMEFRAME_H1)
     rates = mt5.copy_rates_from_pos(SYMBOL, tf, 0, count + 1)
 
     if rates is None or len(rates) == 0:

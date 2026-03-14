@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+}
+
+body {
+  background-color: #080d1a;
+  color: #e2e8f0;
+  margin: 0;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track { background: #080d1a; }
+::-webkit-scrollbar-thumb { background: #1e2d4a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #2d4a7a; }
