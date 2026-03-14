@@ -24,7 +24,7 @@ Ottimizzazioni costi:
 import json
 import logging
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from config import (
     ANTHROPIC_API_KEY, CLAUDE_MODEL, SYMBOL, MIN_CONFIDENCE,
@@ -88,7 +88,7 @@ def _track_cost(response: dict, stage: str, web_search: bool = False) -> float:
     data["total_cost"]  = round(data["total_cost"] + cost, 8)
     data["total_calls"] += 1
     data["calls"].append({
-        "timestamp":     datetime.utcnow().isoformat(),
+        "timestamp":     datetime.now(timezone.utc).isoformat(),
         "stage":         stage,
         "model":         model,
         "input_tokens":  inp,
@@ -262,7 +262,7 @@ def stage2_news(tech_brief: str) -> str:
     """
     log.info("  [Stadio 2] Ricerca notizie e contesto macro (web search)...")
 
-    today = datetime.utcnow().strftime("%d %B %Y")
+    today = datetime.now(timezone.utc).strftime("%d %B %Y")
 
     prompt = f"""Oggi è {today}. Hai già questo brief tecnico su {SYMBOL_BASE}/{SYMBOL_QUOTE}:
 

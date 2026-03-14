@@ -89,5 +89,13 @@ CENTRAL_BANK_QUOTE   = os.getenv("CENTRAL_BANK_QUOTE",  "Federal Reserve (Fed)")
 #   USDJPY → BASE=USD, QUOTE=JPY, CB_BASE="Federal Reserve", CB_QUOTE="Bank of Japan"
 #   XAUUSD → BASE=Gold, QUOTE=USD, CB_BASE="", CB_QUOTE="Federal Reserve"
 
+# ── Session filter ───────────────────────────────────────────────
+# Evita trading nelle ore morte (bassa liquidità = falsi segnali)
+# Orari UTC: Londra apre 07:00, New York chiude 21:00
+# Default: disabilitato — abilitare per EUR/USD in produzione
+SESSION_FILTER_ENABLED = os.getenv("SESSION_FILTER_ENABLED", "false").lower() == "true"
+SESSION_START_UTC      = int(os.getenv("SESSION_START_UTC", 7))   # 07:00 UTC = apertura Londra
+SESSION_END_UTC        = int(os.getenv("SESSION_END_UTC",  21))   # 21:00 UTC = chiusura NY
+
 # ── Dashboard ────────────────────────────────────────────────────
 DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", 8000))

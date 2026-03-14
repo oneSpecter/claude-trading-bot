@@ -2,3 +2,6 @@
 /dashboard/node_modules
 /__pycache__
 /dashboard/dist
+bot.log
+*.log
+bot.log

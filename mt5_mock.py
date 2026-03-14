@@ -11,7 +11,7 @@ Per usarlo nel bot principale, importa così:
 import pandas as pd
 import numpy as np
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 log = logging.getLogger("MT5Mock")
@@ -103,7 +103,7 @@ def get_candles(count: int = 150, timeframe: str = "H1") -> pd.DataFrame:
         pass
 
     # ── Generazione sintetica ────────────────────────────────────
-    np.random.seed(int(datetime.utcnow().timestamp()) % 1000)
+    np.random.seed(int(datetime.now(timezone.utc).timestamp()) % 1000)
     n = count
 
     # Simula un mercato con trend alternati
@@ -122,7 +122,7 @@ def get_candles(count: int = 150, timeframe: str = "H1") -> pd.DataFrame:
     lows   = prices - np.abs(np.random.randn(n) * 0.0003)
     opens  = prices + np.random.randn(n) * 0.0001
 
-    now = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
     times = [now - timedelta(hours=i) for i in range(n, 0, -1)]
 
     df = pd.DataFrame({
@@ -173,7 +173,7 @@ def open_trade(direction: str, sl: float, tp: float) -> dict:
         "lot":       lot,
         "sl":        sl,
         "tp":        tp,
-        "time":      datetime.utcnow().isoformat(),
+        "time":      datetime.now(timezone.utc).isoformat(),
     }
     _mock_positions.append(trade)
     _mock_trade_counter += 1

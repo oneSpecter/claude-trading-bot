@@ -23,12 +23,17 @@ import time
 import json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
+
+from config import (
+    CHECK_INTERVAL, MAX_OPEN_TRADES, SYMBOL, TIMEFRAME,
+    ANTHROPIC_API_KEY, H4_CANDLES_LOAD, USE_MOCK,
+    SESSION_FILTER_ENABLED, SESSION_START_UTC, SESSION_END_UTC,
+)
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
-from pathlib import Path
-
-from config import CHECK_INTERVAL, MAX_OPEN_TRADES, SYMBOL, TIMEFRAME, ANTHROPIC_API_KEY, H4_CANDLES_LOAD, USE_MOCK
 
 # Logging setup
 logging.basicConfig(
@@ -106,9 +111,17 @@ def tick(dry_run: bool = False) -> bool:
     Singolo ciclo del bot.
     Ritorna True se ha eseguito un trade, False altrimenti.
     """
-    log.info(f"─── Tick {_utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC ───")
+    now = _utcnow()
+    log.info(f"─── Tick {now.strftime('%Y-%m-%d %H:%M:%S')} UTC ───")
     _write_status({"phase": "scanning", "symbol": SYMBOL, "timeframe": TIMEFRAME,
                    "dry_run": dry_run})
+
+    # ── 0. Session filter (opzionale) ────────────────────────────
+    if SESSION_FILTER_ENABLED:
+        h = now.hour
+        if not (SESSION_START_UTC <= h < SESSION_END_UTC):
+            log.info(f"⏰ Fuori sessione ({h:02d}:00 UTC) — finestra attiva {SESSION_START_UTC:02d}:00-{SESSION_END_UTC:02d}:00 UTC")
+            return False
 
     # ── 1. Dati mercato ──────────────────────────────────────────
     try:
