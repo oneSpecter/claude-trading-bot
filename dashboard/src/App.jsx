@@ -88,11 +88,12 @@ export default function App() {
 
   const fetchAll = useCallback(async () => {
     try {
+      const ok = r => { if (!r.ok) throw new Error(r.status); return r.json() }
       const [s, j, st, c] = await Promise.all([
-        fetch('/api/status').then(r => r.json()),
-        fetch('/api/journal?limit=100').then(r => r.json()),
-        fetch('/api/stats').then(r => r.json()),
-        fetch('/api/costs').then(r => r.json()),
+        fetch('/api/status').then(ok),
+        fetch('/api/journal?limit=100').then(ok),
+        fetch('/api/stats').then(ok),
+        fetch('/api/costs').then(ok),
       ])
       setStatus(s)
       setJournal(j)

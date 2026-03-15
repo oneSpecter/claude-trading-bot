@@ -23,6 +23,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from journal import compute_stats
 
 app = FastAPI(title="Forex AI Bot Dashboard", version="1.0.0")
 
@@ -94,34 +95,7 @@ def get_journal(limit: int = 100):
 def get_stats():
     """Statistiche aggregate dal journal."""
     entries = _load_json(JOURNAL_FILE)
-    if not entries:
-        return {
-            "total": 0, "executed": 0, "holds": 0,
-            "buys": 0, "sells": 0, "changed": 0,
-            "avg_confidence": 0, "hold_rate": 0,
-            "web_search_rate": 0,
-        }
-
-    total     = len(entries)
-    executed  = sum(1 for e in entries if e.get("executed"))
-    holds     = sum(1 for e in entries if e.get("decision") == "HOLD")
-    buys      = sum(1 for e in entries if e.get("decision") == "BUY")
-    sells     = sum(1 for e in entries if e.get("decision") == "SELL")
-    changed   = sum(1 for e in entries if e.get("decision_changed"))
-    web_done  = sum(1 for e in entries if e.get("web_search_done"))
-    avg_conf  = sum(e.get("confidence", 0) or 0 for e in entries) / total
-
-    return {
-        "total":           total,
-        "executed":        executed,
-        "holds":           holds,
-        "buys":            buys,
-        "sells":           sells,
-        "changed":         changed,
-        "avg_confidence":  round(avg_conf, 1),
-        "hold_rate":       round(holds / total * 100, 1),
-        "web_search_rate": round(web_done / total * 100, 1),
-    }
+    return compute_stats(entries or [])
 
 
 @app.get("/api/costs")

@@ -29,6 +29,7 @@ from config import (
     CHECK_INTERVAL, MAX_OPEN_TRADES, SYMBOL, TIMEFRAME,
     ANTHROPIC_API_KEY, H4_CANDLES_LOAD, USE_MOCK,
     SESSION_FILTER_ENABLED, SESSION_START_UTC, SESSION_END_UTC,
+    MIN_CONFIDENCE,
 )
 
 
@@ -64,8 +65,8 @@ else:
         log.warning("MetaTrader5 non disponibile — uso mock automatico")
 
 from indicators import compute_all, should_call_claude, build_technical_summary
-from claude_analyst import analyze
-from journal import log_decision, print_stats
+from claude_analyst import analyze, check_exit
+from journal import log_decision, log_trade_result, print_stats
 
 
 STATUS_FILE = "bot_status.json"
@@ -106,6 +107,70 @@ def check_config():
     return True
 
 
+def _normalize_pos(pos) -> dict:
+    """Normalizza una posizione (MT5 object o dict mock) in formato uniforme."""
+    if isinstance(pos, dict):
+        return pos
+    return {
+        "ticket":    getattr(pos, "ticket",     None),
+        "direction": "BUY" if getattr(pos, "type", 0) == 0 else "SELL",
+        "price":     getattr(pos, "price_open", 0.0),
+        "sl":        getattr(pos, "sl",         0.0),
+        "tp":        getattr(pos, "tp",         0.0),
+        "lot":       getattr(pos, "volume",     0.0),
+    }
+
+
+def _run_exit_checks(df, df_h4, dry_run: bool):
+    """
+    Per ogni posizione aperta chiede a Claude se chiudere anticipatamente.
+    Eseguito prima del session filter: il bot gestisce trade aperti H24.
+    """
+    try:
+        open_positions = broker.get_open_positions()
+    except Exception as e:
+        log.warning(f"Exit check: impossibile leggere posizioni — {e}")
+        return
+
+    if not open_positions:
+        return
+
+    current_price = float(df["close"].iloc[-1])
+    tech = build_technical_summary(compute_all(df), df_h4=df_h4)
+
+    for raw_pos in open_positions:
+        pos    = _normalize_pos(raw_pos)
+        ticket = pos.get("ticket")
+        try:
+            exit_dec   = check_exit(pos, current_price, tech)
+            action     = exit_dec.get("action", "HOLD")
+            confidence = exit_dec.get("confidence", 0)
+            reasoning  = exit_dec.get("reasoning", "")
+
+            log.info(f"🔍 Exit check ticket {ticket}: {action} "
+                     f"| conf={confidence}% | {reasoning[:80]}")
+
+            if action == "CLOSE" and confidence >= MIN_CONFIDENCE:
+                if dry_run:
+                    log.info(f"[DRY-RUN] Exit anticipato ticket {ticket} NON eseguito")
+                else:
+                    result = broker.close_position(ticket)
+                    if result.get("success"):
+                        profit = result.get("profit", 0.0)
+                        emoji  = "✅" if profit > 0 else "❌"
+                        log.info(f"🤖 Trade {ticket} chiuso da AI exit {emoji} ${profit:.2f} "
+                                 f"— {reasoning[:60]}")
+                        log_trade_result(
+                            ticket=ticket,
+                            close_price=result.get("close_price", current_price),
+                            profit=profit,
+                            close_reason="ai_exit",
+                            close_time=_utcnow().isoformat(),
+                        )
+        except Exception as e:
+            log.warning(f"Exit check fallito per ticket {ticket}: {e}")
+
+
 def tick(dry_run: bool = False) -> bool:
     """
     Singolo ciclo del bot.
@@ -116,12 +181,24 @@ def tick(dry_run: bool = False) -> bool:
     _write_status({"phase": "scanning", "symbol": SYMBOL, "timeframe": TIMEFRAME,
                    "dry_run": dry_run})
 
-    # ── 0. Session filter (opzionale) ────────────────────────────
-    if SESSION_FILTER_ENABLED:
-        h = now.hour
-        if not (SESSION_START_UTC <= h < SESSION_END_UTC):
-            log.info(f"⏰ Fuori sessione ({h:02d}:00 UTC) — finestra attiva {SESSION_START_UTC:02d}:00-{SESSION_END_UTC:02d}:00 UTC")
-            return False
+    # ── 0. Controlla trade chiusi (SL/TP raggiunto) ──────────────
+    try:
+        for trade in broker.get_closed_trades():
+            profit = trade.get("profit", 0.0)
+            updated = log_trade_result(
+                ticket=trade.get("ticket"),
+                close_price=trade.get("close_price", 0.0),
+                profit=profit,
+                close_reason=trade.get("reason", ""),
+                close_time=trade.get("close_time", ""),
+            )
+            if updated:
+                emoji = "✅" if profit > 0 else "❌"
+                log.info(f"📊 Trade chiuso — {emoji} ${profit:.2f} "
+                         f"| Motivo: {trade.get('reason','?')} "
+                         f"| Ticket: {trade.get('ticket')}")
+    except Exception as e:
+        log.warning(f"Errore check trade chiusi: {e}")
 
     # ── 1. Dati mercato ──────────────────────────────────────────
     try:
@@ -139,6 +216,16 @@ def tick(dry_run: bool = False) -> bool:
         log.warning(f"Candele H4 non disponibili: {e} — filtro H4 disabilitato")
         df_h4 = None
 
+    # ── 1c. AI exit check — gestisce trade aperti anche fuori sessione ──
+    _run_exit_checks(df, df_h4, dry_run)
+
+    # ── 0b. Session filter — blocca solo nuovi trade fuori orario ────────
+    if SESSION_FILTER_ENABLED:
+        h = now.hour
+        if not (SESSION_START_UTC <= h < SESSION_END_UTC):
+            log.info(f"⏰ Fuori sessione ({h:02d}:00 UTC) — finestra attiva {SESSION_START_UTC:02d}:00-{SESSION_END_UTC:02d}:00 UTC")
+            return False
+
     # ── 2. Pre-filtro tecnico (gratuito, nessuna API call) ────────
     ok, reason = should_call_claude(df, df_h4=df_h4)
     log.info(f"Pre-filtro: {'✅ PASS' if ok else '⏭  SKIP'} — {reason}")
@@ -155,9 +242,7 @@ def tick(dry_run: bool = False) -> bool:
         return False
 
     # ── 4. Build summary tecnico ─────────────────────────────────
-    df_ind = compute_all(df)
-    df_ind.dropna(inplace=True)
-    tech = build_technical_summary(df_ind, df_h4=df_h4)
+    tech = build_technical_summary(compute_all(df), df_h4=df_h4)
 
     log.info(f"Setup tecnico: EMA_trend={tech['ema_trend']} RSI={tech['rsi']} "
              f"ADX={tech['adx']} ({tech['adx_trend']}) ATR={tech['atr']}")

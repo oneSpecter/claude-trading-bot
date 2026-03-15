@@ -10,7 +10,7 @@ stato account, posizioni aperte.
 
 import logging
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from config import (
     MT5_LOGIN, MT5_PASSWORD, MT5_SERVER,
     SYMBOL, TIMEFRAME, CANDLES_LOAD, H4_CANDLES_LOAD, RISK_PCT
@@ -124,9 +124,11 @@ def calculate_lot_size(price: float, sl: float) -> float:
     if sym_info is None:
         return 0.01
 
-    # Per EURUSD: pip_value ≈ 10$ per 1 lotto standard
-    contract_size = sym_info.trade_contract_size  # tipicamente 100000
-    pip_value = contract_size * pip_risk
+    # Rischio in $ per lotto = contract_size × distanza_SL_in_prezzi
+    # Equivalente a: pip_value_per_lot($10) × pip_risk_in_pips
+    # Esempio: 100000 × 0.0015 = $150/lot → lot = $100/$150 = 0.67 lot
+    contract_size = sym_info.trade_contract_size  # 100000 per forex standard
+    pip_value = contract_size * pip_risk          # dollar risk per 1 lot
 
     lot = risk_amount / pip_value if pip_value > 0 else 0.01
     lot = round(max(lot, sym_info.volume_min), 2)
@@ -181,6 +183,84 @@ def open_trade(direction: str, sl: float, tp: float) -> dict:
         "sl":      sl,
         "tp":      tp,
     }
+
+
+def _deal_reason(code: int) -> str:
+    return {0: "manual", 1: "expert", 2: "sl", 3: "tp", 4: "stop_out"}.get(code, f"code_{code}")
+
+
+_last_deal_check: datetime | None = None
+
+
+def get_closed_trades(lookback_hours: int = 24) -> list:
+    """
+    Restituisce i trade chiusi nelle ultime lookback_hours ore.
+    Cerca deal di chiusura (DEAL_ENTRY_OUT) per il simbolo corrente.
+    Usato per registrare profit/loss reali nel journal.
+    """
+    global _last_deal_check
+    if not MT5_AVAILABLE:
+        return []
+
+    now     = datetime.now(timezone.utc)
+    from_dt = _last_deal_check if _last_deal_check else (now - timedelta(hours=lookback_hours))
+    _last_deal_check = now
+
+    deals = mt5.history_deals_get(from_dt, now)
+    if deals is None:
+        return []
+
+    closed = []
+    for d in deals:
+        if d.symbol != SYMBOL:
+            continue
+        if d.entry != mt5.DEAL_ENTRY_OUT:   # solo deal di chiusura
+            continue
+        closed.append({
+            "ticket":      d.position_id,   # ticket della posizione originale
+            "deal_id":     d.ticket,
+            "close_price": d.price,
+            "profit":      round(d.profit, 2),
+            "swap":        round(d.swap, 2),
+            "commission":  round(d.commission, 2),
+            "volume":      d.volume,
+            "close_time":  datetime.fromtimestamp(d.time, tz=timezone.utc).isoformat(),
+            "reason":      _deal_reason(d.reason),
+        })
+
+    return closed
+
+
+def close_position(ticket: int) -> dict:
+    """Chiude una singola posizione per ticket (AI exit anticipato)."""
+    if not MT5_AVAILABLE:
+        return {"success": False}
+    positions = mt5.positions_get(ticket=ticket)
+    if not positions:
+        log.warning(f"Ticket {ticket} non trovato tra le posizioni aperte")
+        return {"success": False}
+    pos        = positions[0]
+    tick_info  = mt5.symbol_info_tick(SYMBOL)
+    price      = tick_info.bid if pos.type == 0 else tick_info.ask
+    order_type = mt5.ORDER_TYPE_SELL if pos.type == 0 else mt5.ORDER_TYPE_BUY
+    request = {
+        "action":       mt5.TRADE_ACTION_DEAL,
+        "symbol":       SYMBOL,
+        "volume":       pos.volume,
+        "type":         order_type,
+        "position":     pos.ticket,
+        "price":        price,
+        "deviation":    10,
+        "magic":        20250314,
+        "comment":      "ForexAIBot_exit",
+        "type_filling": mt5.ORDER_FILLING_IOC,
+    }
+    result = mt5.order_send(request)
+    if result.retcode != mt5.TRADE_RETCODE_DONE:
+        log.error(f"Chiusura ticket {ticket} fallita: retcode={result.retcode}")
+        return {"success": False, "retcode": result.retcode}
+    log.info(f"✅ Posizione {ticket} chiusa (AI exit) @ {price:.5f}")
+    return {"success": True, "ticket": ticket, "close_price": price}
 
 
 def close_all_positions():

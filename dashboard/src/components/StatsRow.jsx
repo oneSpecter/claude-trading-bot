@@ -9,10 +9,19 @@ function StatCard({ label, value, sub, color = 'text-white' }) {
 }
 
 export default function StatsRow({ stats }) {
-  const { total, executed, avg_confidence, hold_rate, web_search_rate, buys, sells } = stats ?? {}
+  const {
+    total, executed, avg_confidence, hold_rate,
+    web_search_rate, buys, sells,
+    win_rate, total_pnl, trades_with_result,
+  } = stats ?? {}
+
+  const pnlColor = total_pnl > 0 ? 'text-green-400' : total_pnl < 0 ? 'text-red-400' : 'text-white'
+  const pnlValue = total_pnl != null
+    ? `${total_pnl >= 0 ? '+' : ''}$${total_pnl.toFixed(2)}`
+    : '—'
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
       <StatCard
         label="Analisi totali"
         value={total}
@@ -25,6 +34,18 @@ export default function StatsRow({ stats }) {
         color="text-sky-400"
       />
       <StatCard
+        label="Win rate"
+        value={win_rate != null && trades_with_result > 0 ? `${win_rate}%` : '—'}
+        sub={trades_with_result ? `${trades_with_result} trade con risultato` : 'nessun risultato ancora'}
+        color={win_rate >= 50 ? 'text-green-400' : win_rate > 0 ? 'text-red-400' : 'text-terminal-muted'}
+      />
+      <StatCard
+        label="PnL totale"
+        value={pnlValue}
+        sub={trades_with_result ? `su ${trades_with_result} trade` : undefined}
+        color={pnlColor}
+      />
+      <StatCard
         label="Confidenza media"
         value={avg_confidence != null ? `${avg_confidence}%` : '—'}
         sub="target ≥ 65%"
@@ -33,14 +54,8 @@ export default function StatsRow({ stats }) {
       <StatCard
         label="Hold rate"
         value={hold_rate != null ? `${hold_rate}%` : '—'}
-        sub="mercato laterale filtrato"
+        sub={`web search ${web_search_rate ?? '—'}%`}
         color="text-terminal-muted"
-      />
-      <StatCard
-        label="Web search rate"
-        value={web_search_rate != null ? `${web_search_rate}%` : '—'}
-        sub="analisi macro attivate"
-        color="text-purple-400"
       />
     </div>
   )

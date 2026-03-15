@@ -138,6 +138,8 @@ def get_support_resistance(df: pd.DataFrame, lookback: int = 50) -> dict:
 
 def get_candlestick_patterns(df: pd.DataFrame) -> list[str]:
     """Rileva pattern candlestick sull'ultima candela."""
+    if len(df) < 3:
+        return ["Nessun pattern rilevante"]
     patterns = []
     last  = df.iloc[-1]
     prev  = df.iloc[-2]
@@ -242,8 +244,8 @@ def build_technical_summary(df: pd.DataFrame, df_h4: pd.DataFrame = None) -> dic
     """
     Costruisce un dizionario con TUTTO il contesto tecnico
     da passare a Claude come prompt.
+    Nota: riceve un df già elaborato da compute_all().
     """
-    df = compute_all(df)
     df.dropna(inplace=True)
 
     last  = df.iloc[-1]

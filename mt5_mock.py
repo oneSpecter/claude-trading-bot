@@ -17,9 +17,10 @@ from pathlib import Path
 log = logging.getLogger("MT5Mock")
 
 # Stato simulato
-_mock_balance = 10000.0
-_mock_positions = []
-_mock_trade_counter = 1000
+_mock_balance        = 10000.0
+_mock_positions      = []
+_mock_closed_trades  = []   # trade chiusi in attesa di essere letti
+_mock_trade_counter  = 1000
 
 
 def _load_csv(filepath: str, count: int) -> "pd.DataFrame | None":
@@ -75,6 +76,70 @@ def _load_csv(filepath: str, count: int) -> "pd.DataFrame | None":
     except Exception as e:
         log.warning(f"[MOCK CSV] Errore caricamento {filepath}: {e}")
         return None
+
+
+def _check_sl_tp(df: "pd.DataFrame"):
+    """
+    Simula la chiusura automatica delle posizioni mock quando SL o TP viene toccato.
+    Controlla high/low dell'ultima candela contro SL/TP di ogni posizione aperta.
+    """
+    global _mock_positions, _mock_closed_trades, _mock_balance
+    if not _mock_positions:
+        return
+
+    last = df.iloc[-1]
+    high, low = float(last["high"]), float(last["low"])
+    remaining = []
+
+    for pos in _mock_positions:
+        direction = pos["direction"]
+        entry     = pos["price"]
+        sl, tp    = pos["sl"], pos["tp"]
+        lot       = pos["lot"]
+
+        hit_sl = (direction == "BUY"  and low  <= sl) or (direction == "SELL" and high >= sl)
+        hit_tp = (direction == "BUY"  and high >= tp) or (direction == "SELL" and low  <= tp)
+
+        if hit_tp:
+            close_price = tp
+            reason      = "tp"
+        elif hit_sl:
+            close_price = sl
+            reason      = "sl"
+        else:
+            remaining.append(pos)
+            continue
+
+        profit = round(
+            (close_price - entry if direction == "BUY" else entry - close_price)
+            * lot * 100_000, 2
+        )
+        _mock_balance += profit
+
+        closed = {
+            "ticket":      pos["ticket"],
+            "close_price": round(close_price, 5),
+            "profit":      profit,
+            "swap":        0.0,
+            "commission":  0.0,
+            "volume":      lot,
+            "close_time":  datetime.now(timezone.utc).isoformat(),
+            "reason":      reason,
+        }
+        _mock_closed_trades.append(closed)
+        emoji = "✅" if profit > 0 else "❌"
+        log.info(f"[MOCK] {emoji} Trade {pos['ticket']} chiuso per {reason} | "
+                 f"Profit: ${profit:.2f} | Saldo: ${_mock_balance:.2f}")
+
+    _mock_positions = remaining
+
+
+def get_closed_trades(_lookback_hours: int = 24) -> list:
+    """Ritorna i trade chiusi recentemente (simulati). Svuota la lista dopo la lettura."""
+    global _mock_closed_trades
+    result = list(_mock_closed_trades)
+    _mock_closed_trades = []
+    return result
 
 
 def connect() -> bool:
@@ -134,6 +199,12 @@ def get_candles(count: int = 150, timeframe: str = "H1") -> pd.DataFrame:
     }, index=pd.DatetimeIndex(times))
 
     log.info(f"[MOCK] {len(df)} candele generate | Close={prices[-1]:.5f}")
+    try:
+        from config import TIMEFRAME as _TF
+    except Exception:
+        _TF = "H1"
+    if timeframe == _TF:    # SL/TP solo sul timeframe di trading
+        _check_sl_tp(df)
     return df
 
 
@@ -181,6 +252,39 @@ def open_trade(direction: str, sl: float, tp: float) -> dict:
     log.info(f"[MOCK] {direction} eseguito — Ticket:{trade['ticket']} "
              f"Price:{price:.5f} Lot:{lot} SL:{sl} TP:{tp}")
     return {"success": True, **trade}
+
+
+def close_position(ticket: int) -> dict:
+    """Chiude una singola posizione mock per ticket (AI exit)."""
+    global _mock_positions, _mock_closed_trades, _mock_balance
+    for i, pos in enumerate(_mock_positions):
+        if pos["ticket"] != ticket:
+            continue
+        close_price = pos["price"] + np.random.randn() * 0.0002
+        profit = round(
+            (close_price - pos["price"] if pos["direction"] == "BUY"
+             else pos["price"] - close_price)
+            * pos["lot"] * 100_000, 2
+        )
+        _mock_balance += profit
+        _mock_positions.pop(i)
+        closed = {
+            "ticket":      ticket,
+            "close_price": round(close_price, 5),
+            "profit":      profit,
+            "swap":        0.0,
+            "commission":  0.0,
+            "volume":      pos["lot"],
+            "close_time":  datetime.now(timezone.utc).isoformat(),
+            "reason":      "ai_exit",
+        }
+        _mock_closed_trades.append(closed)
+        emoji = "✅" if profit > 0 else "❌"
+        log.info(f"[MOCK] {emoji} Trade {ticket} chiuso da AI exit | "
+                 f"Profit: ${profit:.2f} | Saldo: ${_mock_balance:.2f}")
+        return {"success": True, **closed}
+    log.warning(f"[MOCK] Ticket {ticket} non trovato tra le posizioni aperte")
+    return {"success": False}
 
 
 def close_all_positions():

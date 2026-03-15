@@ -41,7 +41,7 @@ export default function LogPanel() {
   // Auto-scroll al fondo quando arrivano nuove righe
   useEffect(() => {
     if (autoScroll && bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: 'smooth' })
+      bottomRef.current.scrollIntoView({ behavior: 'instant' })
     }
   }, [lines, autoScroll])
 
