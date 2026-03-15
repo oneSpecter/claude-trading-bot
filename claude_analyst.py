@@ -30,6 +30,7 @@ Cambiamenti rispetto alla versione precedente:
 
 import json
 import logging
+import os
 import requests
 from datetime import datetime, timezone
 from pathlib import Path
@@ -106,7 +107,9 @@ def _track_cost(response: dict, stage: str, web_search: bool = False) -> float:
         "cost_usd":      round(cost, 6),
     })
     data["calls"] = data["calls"][-1000:]
-    costs_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
+    tmp = str(costs_path) + ".tmp"
+    Path(tmp).write_text(json.dumps(data, indent=2, ensure_ascii=False), "utf-8")
+    os.replace(tmp, costs_path)
     log.debug(f"  💰 {stage}: ${cost:.5f} ({inp}in/{out}out/{c_read}cached)")
     return cost
 
@@ -155,6 +158,21 @@ def _call_api(messages: list, tools: list = None, max_tokens: int = 1500,
     resp = requests.post(API_URL, headers=HEADERS, json=payload, timeout=timeout)
     resp.raise_for_status()
     return resp.json()
+
+
+def _split_json_output(raw: str) -> tuple[str, dict | None]:
+    """
+    Splitta la risposta Claude sul separatore ---JSON_OUTPUT--- .
+    Ritorna (brief_text, parsed_dict). Se il separatore manca o il JSON è invalido,
+    ritorna (raw, None).
+    """
+    if "---JSON_OUTPUT---" not in raw:
+        return raw, None
+    brief, json_part = raw.split("---JSON_OUTPUT---", 1)
+    try:
+        return brief.strip(), json.loads(json_part.strip())
+    except (json.JSONDecodeError, ValueError):
+        return brief.strip(), None
 
 
 def _extract_text(response: dict) -> str:
@@ -241,24 +259,13 @@ Nessun testo dopo il JSON."""
     _track_cost(resp, "stage1")
     raw   = _extract_text(resp)
 
-    # Parsing robusto con separatore esplicito
-    score         = 50
-    setup_quality = "medium"
-    bias          = "neutral"
-    brief         = raw
-
-    if "---JSON_OUTPUT---" in raw:
-        brief_part, json_part = raw.split("---JSON_OUTPUT---", 1)
-        brief = brief_part.strip()
-        try:
-            data          = json.loads(json_part.strip())
-            score         = int(data.get("score", 50))
-            setup_quality = data.get("setup_quality", "medium")
-            bias          = data.get("bias", "neutral")
-        except (json.JSONDecodeError, ValueError) as e:
-            log.warning(f"  [Stadio 1] JSON parse fallback: {e}")
-    else:
+    brief, data = _split_json_output(raw)
+    if data is None:
         log.warning("  [Stadio 1] Separatore ---JSON_OUTPUT--- non trovato, uso default.")
+        brief = raw
+    score         = int(data.get("score", 50))         if data else 50
+    setup_quality = data.get("setup_quality", "medium") if data else "medium"
+    bias          = data.get("bias", "neutral")         if data else "neutral"
 
     log.info(f"  [Stadio 1] Score={score} ({setup_quality}) | Bias={bias} | Brief: {brief[:80]}...")
     return brief, score, bias
@@ -321,22 +328,12 @@ No text after the JSON."""
     _track_cost(resp, "stage2", web_search=True)
     raw        = _extract_text(resp)
 
-    # Parsing robusto con separatore esplicito
-    fundamental_score = 50
-    convergence       = "neutral"
-    news_brief        = raw
-
-    if "---JSON_OUTPUT---" in raw:
-        brief_part, json_part = raw.split("---JSON_OUTPUT---", 1)
-        news_brief = brief_part.strip()
-        try:
-            data              = json.loads(json_part.strip())
-            fundamental_score = int(data.get("fundamental_score", 50))
-            convergence       = data.get("convergence_with_technical", "neutral")
-        except (json.JSONDecodeError, ValueError) as e:
-            log.warning(f"  [Stadio 2] JSON parse fallback: {e}")
-    else:
+    news_brief, data = _split_json_output(raw)
+    if data is None:
         log.warning("  [Stadio 2] Separatore ---JSON_OUTPUT--- non trovato, uso default.")
+        news_brief = raw
+    fundamental_score = int(data.get("fundamental_score", 50))      if data else 50
+    convergence       = data.get("convergence_with_technical", "neutral") if data else "neutral"
 
     if not news_brief:
         log.warning("  [Stadio 2] Nessun testo estratto dalla risposta web search.")
@@ -449,7 +446,11 @@ Dopo il ragionamento, inserisci esattamente questo separatore seguito dal JSON:
 }}
 </output>"""
 
-    resp = _call_api([{"role": "user", "content": prompt}], max_tokens=900)
+    # Fast path: setup molto forte non ha bisogno di elaborazione lunga
+    tech_s1 = tech.get("technical_score_s1", 50)
+    max_tok  = 500 if tech_s1 >= 80 else 900
+
+    resp = _call_api([{"role": "user", "content": prompt}], max_tokens=max_tok)
     _track_cost(resp, "stage3")
     raw  = _extract_text(resp).strip()
 
@@ -495,10 +496,15 @@ Dopo il ragionamento, inserisci esattamente questo separatore seguito dal JSON:
 # ════════════════════════════════════════════════════════════════
 #  EXIT CHECK — gestione attiva delle posizioni aperte
 # ════════════════════════════════════════════════════════════════
-def check_exit(position: dict, current_price: float, tech: dict) -> dict:
+def check_exit(position: dict, current_price: float, tech: dict, *,
+               time_limit_hit: bool = False) -> dict:
     """
     Chiede a Claude se chiudere anticipatamente una posizione aperta.
     Single-stage economico (~$0.002/chiamata con Haiku).
+
+    time_limit_hit=True: la durata massima è scaduta e il trade è in profitto o
+    perdita contenuta — Claude deve valutare se è il momento giusto per uscire
+    oppure se conviene aspettare ancora (es. trend ancora valido, TP vicino).
 
     Ritorna:
       {"action": "HOLD" | "CLOSE", "reasoning": str, "confidence": int}
@@ -519,8 +525,18 @@ def check_exit(position: dict, current_price: float, tech: dict) -> dict:
 
     patterns = ", ".join(tech.get("candlestick_patterns", []))
 
-    prompt = f"""Hai un trade aperto su {SYMBOL}. Valuta se chiuderlo anticipatamente.
+    time_ctx = ""
+    if time_limit_hit:
+        time_ctx = f"""
+⚠️ CONTESTO SPECIALE — SCADENZA DURATA MASSIMA:
+Il trade ha raggiunto la durata massima configurata. Sei stato chiamato per decidere se
+è opportuno chiudere ora (P&L attuale: {pips:+.1f} pips) oppure attendere ancora.
+- Se il trend è ancora valido e il TP è raggiungibile → HOLD (meglio aspettare)
+- Se il momentum è esaurito o il setup originale non è più valido → CLOSE
+"""
 
+    prompt = f"""Hai un trade aperto su {SYMBOL}. Valuta se chiuderlo anticipatamente.
+{time_ctx}
 TRADE APERTO:
 Direzione: {direction} | Entrata: {entry} | Prezzo attuale: {current_price}
 Stop Loss: {sl} | Take Profit: {tp}
@@ -564,14 +580,20 @@ Rispondi SOLO con JSON valido:
 # ════════════════════════════════════════════════════════════════
 #  ENTRY POINT PRINCIPALE
 # ════════════════════════════════════════════════════════════════
-def analyze(tech_summary: dict) -> dict:
+def analyze(tech_summary: dict, *, min_confidence: int = None, web_search_min_score: int = None) -> dict:
     """
     Esegue l'analisi completa a 3 stadi e restituisce la decisione.
+
+    I parametri keyword-only permettono di sovrascrivere le soglie da config.py
+    a runtime (usati dalla pagina Impostazioni della dashboard).
 
     Ottimizzazioni costi:
       - Stage2 (web search) viene skippato se technical_score < WEB_SEARCH_MIN_SCORE
       - Prompt caching attivo su tutte e 3 le chiamate
     """
+    _min_conf = MIN_CONFIDENCE       if min_confidence       is None else min_confidence
+    _web_min  = WEB_SEARCH_MIN_SCORE if web_search_min_score is None else web_search_min_score
+
     log.info("🧠 Avvio analisi Claude (3 stadi)...")
 
     # ── Stadio 1: analisi tecnica + score + bias ─────────────────
@@ -581,16 +603,16 @@ def analyze(tech_summary: dict) -> dict:
     tech_summary["technical_score_s1"] = tech_score
 
     # ── Gate stage1 → stage2: web search solo se vale ────────────
-    if tech_score >= WEB_SEARCH_MIN_SCORE:
+    if tech_score >= _web_min:
         news_brief, fundamental_score, convergence = stage2_news(tech_brief, tech_bias)
     else:
         log.info(
-            f"  ⏭  Stage2 skippato — technical_score={tech_score} < {WEB_SEARCH_MIN_SCORE} "
+            f"  ⏭  Stage2 skippato — technical_score={tech_score} < {_web_min} "
             f"(setup marginale, risparmio web search)"
         )
         news_brief        = (
             f"Analisi macro non eseguita — setup tecnico marginale "
-            f"(score: {tech_score}/100). Decisione basata solo su analisi tecnica."
+            f"(score: {tech_score}/{_web_min}). Decisione basata solo su analisi tecnica."
         )
         fundamental_score = 50
         convergence       = "neutral"
@@ -610,16 +632,27 @@ def analyze(tech_summary: dict) -> dict:
     decision["tech_score_s1"]     = tech_score
     decision["technical_score"]   = tech_score   # usa sempre il valore calcolato in stage1
     decision["tech_bias_s1"]      = tech_bias
-    decision["web_search_done"]   = tech_score >= WEB_SEARCH_MIN_SCORE
+    decision["web_search_done"]   = tech_score >= _web_min
+
+    # ── Enforce R3: ADX < 20 → riduzione confidence obbligatoria ─
+    # Claude potrebbe ignorare la regola — la applichiamo in post-processing
+    adx = float(tech_summary.get("adx", 25))
+    if adx < 20 and decision.get("decision") != "HOLD":
+        orig_conf    = decision.get("confidence", 0)
+        enforced     = max(0, orig_conf - 15)
+        if enforced != orig_conf:
+            log.info(f"  [R3 enforced] ADX={adx:.1f} < 20 → confidence {orig_conf}% → {enforced}%")
+            decision["confidence"] = enforced
+            decision["reasoning"]  = f"[Trend debole ADX={adx:.0f}] " + decision.get("reasoning", "")
 
     # ── Soglia minima confidenza ─────────────────────────────────
-    if decision.get("confidence", 0) < MIN_CONFIDENCE:
+    if decision.get("confidence", 0) < _min_conf:
         log.info(
-            f"  ⚠️  Confidenza {decision['confidence']}% < soglia {MIN_CONFIDENCE}% → HOLD forzato"
+            f"  ⚠️  Confidenza {decision['confidence']}% < soglia {_min_conf}% → HOLD forzato"
         )
         decision["decision"]  = "HOLD"
         decision["reasoning"] = (
-            f"Confidenza insufficiente ({decision['confidence']}% < {MIN_CONFIDENCE}%). "
+            f"Confidenza insufficiente ({decision['confidence']}% < {_min_conf}%). "
             + decision.get("reasoning", "")
         )
 

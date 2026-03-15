@@ -98,18 +98,22 @@ def get_h4_bias(df_h4: pd.DataFrame) -> str:
     Calcola il bias direzionale su H4 tramite EMA 9/21.
     Ritorna 'BULLISH', 'BEARISH' o 'NEUTRAL'.
     Usato come filtro: non tradare segnali H1 contro il trend H4.
+    Threshold dinamico basato sulla volatilità recente (avg high-low H4).
     """
     df = df_h4.copy()
     df["ema_fast"] = df["close"].ewm(span=EMA_FAST, adjust=False).mean()
     df["ema_slow"] = df["close"].ewm(span=EMA_SLOW, adjust=False).mean()
-    df.dropna(inplace=True)
+    df = df.dropna()
     if len(df) == 0:
         return "NEUTRAL"
     last = df.iloc[-1]
     diff = last["ema_fast"] - last["ema_slow"]
-    if diff > 0.00010:
+    # Threshold = 20% della volatilità media H4 (adattivo a qualsiasi strumento)
+    avg_range = (df["high"].tail(20) - df["low"].tail(20)).mean()
+    threshold = avg_range * 0.20 if avg_range > 0 else 0.0005
+    if diff > threshold:
         return "BULLISH"
-    elif diff < -0.00010:
+    elif diff < -threshold:
         return "BEARISH"
     return "NEUTRAL"
 
@@ -194,42 +198,53 @@ def get_candlestick_patterns(df: pd.DataFrame) -> list[str]:
     return patterns if patterns else ["Nessun pattern rilevante"]
 
 
-def should_call_claude(df: pd.DataFrame, df_h4: pd.DataFrame = None) -> tuple[bool, str]:
+def apply_prefilter(
+    df_c: pd.DataFrame,
+    df_h4: pd.DataFrame = None,
+    *,
+    require_ema_cross: bool = None,
+    require_rsi_aligned: bool = None,
+    adx_threshold: float = None,
+    require_adx: bool = None,
+    require_h4_confirm: bool = None,
+) -> tuple[bool, str]:
     """
-    Pre-filtro tecnico: decide se vale la pena chiamare Claude API.
-    Risparmia costi evitando chiamate in mercato laterale/piatto.
+    Pre-filtro tecnico su df già elaborato da compute_all().
+    Evita di ricalcolare gli indicatori se sono già disponibili.
+    I parametri keyword-only permettono di sovrascrivere i default da config.py
+    a runtime (usati dalla pagina Impostazioni della dashboard).
     Ritorna (bool, motivo).
     """
-    df = compute_all(df)
-    df.dropna(inplace=True)
+    _req_ema = REQUIRE_EMA_CROSS   if require_ema_cross   is None else require_ema_cross
+    _req_rsi = REQUIRE_RSI_ALIGNED if require_rsi_aligned is None else require_rsi_aligned
+    _adx_thr = ADX_THRESHOLD       if adx_threshold       is None else adx_threshold
+    _req_adx = REQUIRE_ADX         if require_adx         is None else require_adx
+    _req_h4  = REQUIRE_H4_CONFIRM  if require_h4_confirm  is None else require_h4_confirm
 
-    if len(df) < 3:
+    if len(df_c) < 3:
         return False, "Dati insufficienti"
 
-    last = df.iloc[-1]
+    last = df_c.iloc[-1]
     rsi  = last["rsi"]
 
-    # Cerca crossover nelle ultime 3 candele
-    recent_crosses = df["cross"].tail(3)
+    recent_crosses = df_c["cross"].tail(3)
     has_cross      = (recent_crosses != 0).any()
     cross_dir      = recent_crosses[recent_crosses != 0].iloc[-1] if has_cross else 0
 
-    if REQUIRE_EMA_CROSS and not has_cross:
+    if _req_ema and not has_cross:
         return False, f"Nessun crossover EMA recente (EMA_diff={last['ema_diff']:.5f})"
 
-    if REQUIRE_RSI_ALIGNED:
+    if _req_rsi:
         if cross_dir == 1 and rsi < RSI_BULL_THRESHOLD:
             return False, f"Cross rialzista ma RSI troppo basso ({rsi:.1f} < {RSI_BULL_THRESHOLD})"
         if cross_dir == -1 and rsi > RSI_BEAR_THRESHOLD:
             return False, f"Cross ribassista ma RSI troppo alto ({rsi:.1f} > {RSI_BEAR_THRESHOLD})"
 
-    # ADX: salta se il mercato è ranging (falsi segnali EMA)
     adx = last.get("adx", 0)
-    if REQUIRE_ADX and adx < ADX_THRESHOLD:
-        return False, f"Mercato ranging — ADX={adx:.1f} < {ADX_THRESHOLD} (nessun trend)"
+    if _req_adx and adx < _adx_thr:
+        return False, f"Mercato ranging — ADX={adx:.1f} < {_adx_thr} (nessun trend)"
 
-    # H4 trend filter: non tradare contro il trend principale
-    if REQUIRE_H4_CONFIRM and df_h4 is not None:
+    if _req_h4 and df_h4 is not None:
         h4_bias = get_h4_bias(df_h4)
         if cross_dir == 1 and h4_bias == "BEARISH":
             return False, f"Cross H1 rialzista ma H4 ribassista — contro-trend, skip"
@@ -240,13 +255,23 @@ def should_call_claude(df: pd.DataFrame, df_h4: pd.DataFrame = None) -> tuple[bo
     return True, f"Setup {direction} rilevato — RSI={rsi:.1f}, ADX={adx:.1f}, ATR={last['atr']:.5f}"
 
 
+def should_call_claude(df: pd.DataFrame, df_h4: pd.DataFrame = None) -> tuple[bool, str]:
+    """
+    Pre-filtro tecnico su df grezzo.
+    Wrapper di apply_prefilter() — computa gli indicatori al volo.
+    Usa apply_prefilter() direttamente se hai già chiamato compute_all().
+    """
+    df_c = compute_all(df).dropna()
+    return apply_prefilter(df_c, df_h4)
+
+
 def build_technical_summary(df: pd.DataFrame, df_h4: pd.DataFrame = None) -> dict:
     """
     Costruisce un dizionario con TUTTO il contesto tecnico
     da passare a Claude come prompt.
     Nota: riceve un df già elaborato da compute_all().
     """
-    df.dropna(inplace=True)
+    df = df.dropna()
 
     last  = df.iloc[-1]
     prev  = df.iloc[-2]
@@ -260,7 +285,8 @@ def build_technical_summary(df: pd.DataFrame, df_h4: pd.DataFrame = None) -> dic
     # Trend a breve e medio termine
     short_trend = "RIALZISTA" if last["ema_fast"] > last["ema_slow"] else "RIBASSISTA"
     macd_bias   = "RIALZISTA" if last["macd_hist"] > 0 else "RIBASSISTA"
-    bb_pos      = (last["close"] - last["bb_lower"]) / (last["bb_upper"] - last["bb_lower"])
+    bb_range    = last["bb_upper"] - last["bb_lower"]
+    bb_pos      = (last["close"] - last["bb_lower"]) / bb_range if bb_range > 0 else 0.5
     bb_desc     = "vicino alla banda superiore" if bb_pos > 0.8 else \
                   "vicino alla banda inferiore" if bb_pos < 0.2 else "al centro delle bande"
 

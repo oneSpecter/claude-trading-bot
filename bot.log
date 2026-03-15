@@ -156,3 +156,42 @@
 2026-03-14 22:38:21  INFO      [MOCK] 100 candele generate | Close=1.08189
 2026-03-14 22:38:21  INFO      Pre-filtro: ⏭  SKIP — Nessun crossover EMA recente (EMA_diff=0.00109)
 2026-03-14 22:38:21  INFO      Prossimo controllo tra 300s...
+2026-03-15 20:06:19  INFO      MetaTrader5 rilevato — uso broker reale
+2026-03-15 20:24:44  INFO      Mock broker attivo — nessuna connessione MT5 richiesta
+2026-03-15 20:24:44  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-15 20:24:44  INFO      [MOCK] Connessione MT5 simulata. Saldo: $10,000 demo
+2026-03-15 20:24:44  INFO      Account: Saldo=10000.00 USD | Leva=100x
+2026-03-15 20:24:44  INFO      Bot avviato. Controllo ogni 1800s. CTRL+C per fermare.
+2026-03-15 20:24:44  INFO      ─── Tick 2026-03-15 19:24:44 UTC ───
+2026-03-15 20:24:44  INFO      [MOCK] 150 candele generate | Close=1.09015
+2026-03-15 20:24:44  INFO      Candele caricate: 150 | Close=1.09015
+2026-03-15 20:24:44  INFO      [MOCK] 150 candele generate | Close=1.09015
+2026-03-15 20:24:44  INFO      Pre-filtro: ⏭  SKIP — Nessun crossover EMA recente (EMA_diff=0.00138)
+2026-03-15 20:24:44  INFO      Prossimo controllo tra 1800s...
+2026-03-15 20:31:17  INFO      Bot fermato. Ciao! 👋
+2026-03-15 20:31:17  INFO      [MOCK] Disconnessione MT5 simulata.
+2026-03-15 20:32:38  INFO      MetaTrader5 rilevato — uso broker reale
+2026-03-15 20:43:42  INFO      MetaTrader5 rilevato — uso broker reale
+2026-03-15 20:43:52  INFO      MetaTrader5 rilevato — uso broker reale
+2026-03-15 20:46:18  INFO      MetaTrader5 rilevato — uso broker reale
+2026-03-15 20:50:51  INFO      MetaTrader5 rilevato — uso broker reale
+2026-03-15 20:50:51  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-15 20:50:51  INFO      MT5 path: C:\Program Files\MetaTrader 5\terminal64.exe
+2026-03-15 20:51:56  ERROR     Inizializzazione MT5 fallita: (-10005, 'IPC timeout')
+2026-03-15 20:51:56  ERROR     Verifica: MT5 aperto? Algo Trading abilitato? MT5_PATH nel .env corretto?
+2026-03-15 20:51:56  ERROR     ❌ Impossibile connettersi a MT5 — bot fermato.
+2026-03-15 20:51:56  ERROR        Verifica: MT5 aperto? Algo Trading abilitato? MT5_PATH corretto?
+2026-03-15 20:51:56  ERROR        Oppure usa modalità MOCK dalla dashboard per continuare senza MT5.
+2026-03-15 20:54:41  INFO      Mock broker attivo — nessuna connessione MT5 richiesta
+2026-03-15 20:54:42  INFO      Modalità DRY-RUN: nessun ordine reale sarà inviato
+2026-03-15 20:54:42  INFO      [MOCK] Connessione MT5 simulata. Saldo: $10,000 demo
+2026-03-15 20:54:42  INFO      Account: Saldo=10000.00 USD | Leva=100x
+2026-03-15 20:54:42  INFO      Bot avviato. Controllo ogni 1800s. CTRL+C per fermare.
+2026-03-15 20:54:42  INFO      ─── Tick 2026-03-15 19:54:42 UTC ───
+2026-03-15 20:54:42  INFO      [MOCK] 150 candele generate | Close=1.09417
+2026-03-15 20:54:42  INFO      Candele caricate: 150 | Close=1.09417
+2026-03-15 20:54:42  INFO      [MOCK] 150 candele generate | Close=1.09417
+2026-03-15 20:54:42  INFO      Pre-filtro: ⏭  SKIP — Nessun crossover EMA recente (EMA_diff=0.00132)
+2026-03-15 20:54:42  INFO      Prossimo controllo tra 1800s...
+2026-03-15 21:02:33  INFO      Bot fermato. Ciao! 👋
+2026-03-15 21:02:33  INFO      [MOCK] Disconnessione MT5 simulata.

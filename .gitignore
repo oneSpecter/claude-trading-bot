@@ -2,9 +2,5 @@
 /dashboard/node_modules
 /__pycache__
 /dashboard/dist
-bot.log
 *.log
-bot.log
-bot.log
-*.log
-bot.log
+.claude/settings.local.json

@@ -18,7 +18,7 @@ JOURNAL_JSON = "journal.json"
 JOURNAL_CSV  = "journal.csv"
 CSV_FIELDS   = [
     "timestamp", "symbol", "decision", "confidence",
-    "price", "sl", "tp", "lot",
+    "price", "sl", "tp", "lot", "rr_ratio",
     "technical_score", "fundamental_score", "market_regime",
     "initial_decision", "decision_changed",
     "reasoning", "devil_advocate",
@@ -37,8 +37,11 @@ def _load_json() -> list:
 
 
 def _save_json(entries: list):
-    with open(JOURNAL_JSON, "w", encoding="utf-8") as f:
+    # Scrittura atomica: scrive su .tmp poi rinomina per evitare corruzione
+    tmp = JOURNAL_JSON + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(entries, f, indent=2, ensure_ascii=False, default=str)
+    os.replace(tmp, JOURNAL_JSON)
 
 
 def _append_csv(entry: dict):
@@ -70,6 +73,7 @@ def log_decision(decision: dict, tech_summary: dict, executed: bool, trade_resul
         "devil_advocate":     decision.get("devil_advocate"),
         "tech_brief":         decision.get("tech_brief"),
         "news_brief":         decision.get("news_brief"),
+        "rr_ratio":           decision.get("rr_ratio"),
         "executed":           executed,
         "ticket":             trade_result.get("ticket") if trade_result else None,
     }

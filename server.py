@@ -20,10 +20,16 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from journal import compute_stats
+from config import (
+    MIN_CONFIDENCE, MAX_DAILY_LOSS_PCT, MAX_TRADE_DURATION_H,
+    SESSION_FILTER_ENABLED, SESSION_START_UTC, SESSION_END_UTC,
+    WEB_SEARCH_MIN_SCORE, ADX_THRESHOLD, REQUIRE_ADX,
+    REQUIRE_EMA_CROSS, REQUIRE_RSI_ALIGNED, REQUIRE_H4_CONFIRM,
+)
 
 app = FastAPI(title="Forex AI Bot Dashboard", version="1.0.0")
 
@@ -37,8 +43,25 @@ app.add_middleware(
 BOT_STATUS_FILE = "bot_status.json"
 JOURNAL_FILE    = "journal.json"
 COSTS_FILE      = "api_costs.json"
+BOT_CONFIG_FILE = "bot_config.json"
+SETTINGS_FILE   = "bot_settings.json"
 STOP_FLAG       = "bot_stop.flag"
 STALE_THRESHOLD = timedelta(minutes=15)
+
+SETTINGS_DEFAULTS = {
+    "min_confidence":         MIN_CONFIDENCE,
+    "max_daily_loss_pct":     MAX_DAILY_LOSS_PCT,
+    "max_trade_duration_h":   MAX_TRADE_DURATION_H,
+    "session_filter_enabled": SESSION_FILTER_ENABLED,
+    "session_start_utc":      SESSION_START_UTC,
+    "session_end_utc":        SESSION_END_UTC,
+    "web_search_min_score":   WEB_SEARCH_MIN_SCORE,
+    "adx_threshold":          ADX_THRESHOLD,
+    "require_adx":            REQUIRE_ADX,
+    "require_ema_cross":      REQUIRE_EMA_CROSS,
+    "require_rsi_aligned":    REQUIRE_RSI_ALIGNED,
+    "require_h4_confirm":     REQUIRE_H4_CONFIRM,
+}
 
 _bot_process: subprocess.Popen | None = None
 
@@ -62,8 +85,8 @@ def get_status():
     if data is None:
         return {"running": False, "phase": "offline", "timestamp": None}
 
-    # Se il bot ha scritto phase=stopped → non è running, sempre
-    if data.get("phase") == "stopped":
+    # Se il bot ha scritto phase=stopped/error → non è running, sempre
+    if data.get("phase") in ("stopped", "error"):
         data["running"] = False
         return data
 
@@ -139,6 +162,57 @@ def get_logs(lines: int = 150):
         return {"lines": [f"Errore lettura log: {e}"], "total": 0}
 
 
+@app.get("/api/config")
+def get_config():
+    """Configurazione runtime del bot (dry_run, ecc.)."""
+    data = _load_json(BOT_CONFIG_FILE)
+    return data if data else {"dry_run": True}
+
+
+@app.get("/api/settings")
+def get_settings():
+    """Impostazioni runtime del bot (merge file + default config.py)."""
+    saved = _load_json(SETTINGS_FILE) or {}
+    return {**SETTINGS_DEFAULTS, **saved}
+
+
+@app.post("/api/settings")
+async def set_settings(request: Request):
+    """Salva le impostazioni runtime su bot_settings.json (atomico)."""
+    body = await request.json()
+    validated = {}
+    for key, default in SETTINGS_DEFAULTS.items():
+        if key not in body:
+            continue
+        val = body[key]
+        try:
+            if isinstance(default, bool):
+                validated[key] = bool(val)
+            elif isinstance(default, int):
+                validated[key] = int(val)
+            elif isinstance(default, float):
+                validated[key] = float(val)
+            else:
+                validated[key] = val
+        except (ValueError, TypeError):
+            pass  # ignora valori non coercibili
+    tmp = SETTINGS_FILE + ".tmp"
+    Path(tmp).write_text(json.dumps(validated, indent=2), encoding="utf-8")
+    os.replace(tmp, SETTINGS_FILE)
+    return {**SETTINGS_DEFAULTS, **validated}
+
+
+@app.post("/api/config")
+def set_config(dry_run: bool, use_mock: bool = None):
+    """Aggiorna la configurazione runtime (il bot la legge al prossimo tick)."""
+    data = _load_json(BOT_CONFIG_FILE) or {}
+    data["dry_run"] = dry_run
+    if use_mock is not None:
+        data["use_mock"] = use_mock
+    Path(BOT_CONFIG_FILE).write_text(json.dumps(data, indent=2), encoding="utf-8")
+    return data
+
+
 @app.post("/api/bot/stop")
 def bot_stop():
     """Ferma il bot scrivendo il flag di stop (il bot lo rileva al prossimo tick)."""
@@ -147,7 +221,7 @@ def bot_stop():
 
 
 @app.post("/api/bot/start")
-def bot_start(dry_run: bool = True):
+def bot_start(dry_run: bool = True, use_mock: bool = True):
     """Avvia il bot come sottoprocesso."""
     global _bot_process
 
@@ -160,11 +234,25 @@ def bot_start(dry_run: bool = True):
     if stop_path.exists():
         stop_path.unlink()
 
-    args = [sys.executable, "bot.py"]
+    args = [sys.executable, "-u", "bot.py"]
     if dry_run:
         args.append("--dry")
+    if use_mock:
+        args.append("--mock")
 
-    _bot_process = subprocess.Popen(args, cwd=Path(__file__).parent)
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+
+    # Non redirigere stdout/stderr: bot.py scrive su bot.log tramite FileHandler.
+    # Redirigere causerebbe duplicazione (FileHandler + stdout → stesso file).
+    _bot_process = subprocess.Popen(
+        args,
+        cwd=Path(__file__).parent,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=env,
+    )
     return {"status": "started", "pid": _bot_process.pid, "dry_run": dry_run}
 
 

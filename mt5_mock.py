@@ -13,6 +13,7 @@ import numpy as np
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from config import MOCK_DATA_FILE, TIMEFRAME as _TF
 
 log = logging.getLogger("MT5Mock")
 
@@ -21,6 +22,7 @@ _mock_balance        = 10000.0
 _mock_positions      = []
 _mock_closed_trades  = []   # trade chiusi in attesa di essere letti
 _mock_trade_counter  = 1000
+_last_close          = 1.0850  # aggiornato a ogni get_candles()
 
 
 def _load_csv(filepath: str, count: int) -> "pd.DataFrame | None":
@@ -134,7 +136,7 @@ def _check_sl_tp(df: "pd.DataFrame"):
     _mock_positions = remaining
 
 
-def get_closed_trades(_lookback_hours: int = 24) -> list:
+def get_closed_trades() -> list:
     """Ritorna i trade chiusi recentemente (simulati). Svuota la lista dopo la lettura."""
     global _mock_closed_trades
     result = list(_mock_closed_trades)
@@ -157,11 +159,13 @@ def get_candles(count: int = 150, timeframe: str = "H1") -> pd.DataFrame:
     Se MOCK_DATA_FILE è configurato e il file esiste → carica dati storici reali.
     Altrimenti → genera dati sintetici random.
     """
+    global _last_close   # dichiarazione in cima alla funzione — obbligatorio in Python
+
     try:
-        from config import MOCK_DATA_FILE
         if MOCK_DATA_FILE and Path(MOCK_DATA_FILE).exists():
             df = _load_csv(MOCK_DATA_FILE, count)
             if df is not None:
+                _last_close = float(df["close"].iloc[-1])
                 return df
             log.warning("[MOCK CSV] Fallback a dati sintetici")
     except Exception:
@@ -199,12 +203,9 @@ def get_candles(count: int = 150, timeframe: str = "H1") -> pd.DataFrame:
     }, index=pd.DatetimeIndex(times))
 
     log.info(f"[MOCK] {len(df)} candele generate | Close={prices[-1]:.5f}")
-    try:
-        from config import TIMEFRAME as _TF
-    except Exception:
-        _TF = "H1"
     if timeframe == _TF:    # SL/TP solo sul timeframe di trading
         _check_sl_tp(df)
+        _last_close = float(df["close"].iloc[-1])
     return df
 
 
@@ -234,7 +235,10 @@ def calculate_lot_size(price: float, sl: float) -> float:
 
 def open_trade(direction: str, sl: float, tp: float) -> dict:
     global _mock_trade_counter, _mock_positions
-    price = 1.0850 + np.random.randn() * 0.0001
+    # Usa il prezzo reale dell'ultimo tick, non un valore fisso
+    spread = 0.00013  # ~1.3 pip spread EUR/USD tipico
+    price  = (_last_close + spread) if direction == "BUY" else (_last_close - spread)
+    price  = round(price + np.random.randn() * 0.00003, 5)  # slippage minimo
     lot   = calculate_lot_size(price, sl)
 
     trade = {
@@ -260,7 +264,8 @@ def close_position(ticket: int) -> dict:
     for i, pos in enumerate(_mock_positions):
         if pos["ticket"] != ticket:
             continue
-        close_price = pos["price"] + np.random.randn() * 0.0002
+        # Usa il prezzo di mercato corrente (non il prezzo di apertura)
+        close_price = round(_last_close + np.random.randn() * 0.00005, 5)
         profit = round(
             (close_price - pos["price"] if pos["direction"] == "BUY"
              else pos["price"] - close_price)

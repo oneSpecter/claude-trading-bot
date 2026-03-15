@@ -12,8 +12,8 @@ import logging
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 from config import (
-    MT5_LOGIN, MT5_PASSWORD, MT5_SERVER,
-    SYMBOL, TIMEFRAME, CANDLES_LOAD, H4_CANDLES_LOAD, RISK_PCT
+    MT5_LOGIN, MT5_PASSWORD, MT5_SERVER, MT5_PATH,
+    SYMBOL, TIMEFRAME, CANDLES_LOAD, RISK_PCT
 )
 
 log = logging.getLogger("MT5Broker")
@@ -39,8 +39,14 @@ def connect() -> bool:
         log.error("MT5 non installato. Installa su Windows con: pip install MetaTrader5")
         return False
 
-    if not mt5.initialize():
+    init_kwargs = {}
+    if MT5_PATH:
+        init_kwargs["path"] = MT5_PATH
+        log.info(f"MT5 path: {MT5_PATH}")
+
+    if not mt5.initialize(**init_kwargs):
         log.error(f"Inizializzazione MT5 fallita: {mt5.last_error()}")
+        log.error("Verifica: MT5 aperto? Algo Trading abilitato? MT5_PATH nel .env corretto?")
         return False
 
     authorized = mt5.login(MT5_LOGIN, password=MT5_PASSWORD, server=MT5_SERVER)

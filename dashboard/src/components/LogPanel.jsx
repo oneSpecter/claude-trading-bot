@@ -16,18 +16,19 @@ function colorLine(line) {
   return 'text-gray-300'
 }
 
-export default function LogPanel() {
+export default function LogPanel({ tall = false }) {
   const [lines,      setLines]      = useState([])
   const [total,      setTotal]      = useState(0)
   const [autoScroll, setAutoScroll] = useState(true)
   const [collapsed,  setCollapsed]  = useState(false)
-  const bottomRef = useRef(null)
   const containerRef = useRef(null)
+  const clearOffset  = useRef(0)   // righe da saltare dopo Clear
 
   const fetchLogs = useCallback(async () => {
     try {
       const data = await fetch('/api/logs?lines=150').then(r => r.json())
-      setLines(data.lines ?? [])
+      const all = data.lines ?? []
+      setLines(all.slice(clearOffset.current))
       setTotal(data.total ?? 0)
     } catch { /* server non raggiungibile */ }
   }, [])
@@ -38,14 +39,14 @@ export default function LogPanel() {
     return () => clearInterval(id)
   }, [fetchLogs])
 
-  // Auto-scroll al fondo quando arrivano nuove righe
+  // Auto-scroll: usa scrollTop sul container (NON scrollIntoView che sposta la pagina)
   useEffect(() => {
-    if (autoScroll && bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: 'instant' })
+    if (autoScroll && containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight
     }
   }, [lines, autoScroll])
 
-  // Disabilita auto-scroll se l'utente scrolla manualmente verso l'alto
+  // Disabilita auto-scroll se l'utente scrolla verso l'alto
   function handleScroll() {
     const el = containerRef.current
     if (!el) return
@@ -80,9 +81,9 @@ export default function LogPanel() {
           >
             ↓ Auto
           </button>
-          {/* Clear visuale */}
+          {/* Clear */}
           <button
-            onClick={() => setLines([])}
+            onClick={() => { clearOffset.current += lines.length; setLines([]) }}
             className="text-[10px] px-2 py-1 rounded border border-terminal-border text-terminal-muted hover:border-terminal-muted transition-colors"
           >
             Clear
@@ -102,7 +103,7 @@ export default function LogPanel() {
         <div
           ref={containerRef}
           onScroll={handleScroll}
-          className="h-64 sm:h-80 overflow-y-auto p-3 sm:p-4 font-mono text-[11px] sm:text-xs leading-5 space-y-px"
+          className={`${tall ? 'h-96 sm:h-[32rem]' : 'h-64 sm:h-80'} overflow-y-auto p-3 sm:p-4 font-mono text-[11px] sm:text-xs leading-5 space-y-px`}
         >
           {lines.length === 0 ? (
             <span className="text-terminal-muted">
@@ -115,7 +116,6 @@ export default function LogPanel() {
               </div>
             ))
           )}
-          <div ref={bottomRef} />
         </div>
       )}
     </div>
