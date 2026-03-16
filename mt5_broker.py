@@ -34,30 +34,59 @@ except ImportError:
 
 
 def connect() -> bool:
-    """Apre la connessione a MT5."""
+    """Apre la connessione a MT5.
+
+    Tenta 3 strategie in ordine crescente di aggressività:
+    1. initialize() senza argomenti          → trova MT5 già aperto automaticamente
+    2. initialize() con credenziali, no path → forza login senza lanciare nuovo processo
+    3. initialize() con path + credenziali   → avvia MT5 dal percorso specificato
+    """
     if not MT5_AVAILABLE:
         log.error("MT5 non installato. Installa su Windows con: pip install MetaTrader5")
         return False
 
-    init_kwargs = {}
-    if MT5_PATH:
-        init_kwargs["path"] = MT5_PATH
-        log.info(f"MT5 path: {MT5_PATH}")
+    attempts = [
+        # (descrizione, kwargs)
+        ("senza argomenti",
+         {}),
+        ("con credenziali, senza path",
+         {"login": int(MT5_LOGIN), "password": MT5_PASSWORD, "server": MT5_SERVER} if MT5_LOGIN else {}),
+        ("con credenziali e path",
+         {"path": MT5_PATH, "login": int(MT5_LOGIN), "password": MT5_PASSWORD, "server": MT5_SERVER} if MT5_PATH and MT5_LOGIN else {}),
+    ]
 
-    if not mt5.initialize(**init_kwargs):
-        log.error(f"Inizializzazione MT5 fallita: {mt5.last_error()}")
-        log.error("Verifica: MT5 aperto? Algo Trading abilitato? MT5_PATH nel .env corretto?")
-        return False
+    for desc, kwargs in attempts:
+        if not kwargs and desc != "senza argomenti":
+            continue   # salta se credenziali/path non configurati
 
-    authorized = mt5.login(MT5_LOGIN, password=MT5_PASSWORD, server=MT5_SERVER)
-    if not authorized:
-        log.error(f"Login MT5 fallito: {mt5.last_error()}")
-        mt5.shutdown()
-        return False
+        log.info(f"MT5 initialize() — tentativo: {desc}")
+        mt5.shutdown()   # reset prima di ogni tentativo
 
-    info = mt5.account_info()
-    log.info(f"✅ MT5 connesso — Account: {info.login} | Saldo: {info.balance:.2f} {info.currency}")
-    return True
+        if not mt5.initialize(**kwargs):
+            log.warning(f"  Fallito ({mt5.last_error()}) — prossimo tentativo")
+            continue
+
+        # initialize() ok → verifica account o esegui login esplicito
+        info = mt5.account_info()
+        if info:
+            log.info(f"✅ MT5 connesso — Account: {info.login} | Saldo: {info.balance:.2f} {info.currency}")
+            return True
+
+        # initialize() ok ma non loggato → login esplicito
+        if MT5_LOGIN:
+            if mt5.login(int(MT5_LOGIN), password=MT5_PASSWORD, server=MT5_SERVER):
+                info = mt5.account_info()
+                log.info(f"✅ MT5 connesso — Account: {info.login} | Saldo: {info.balance:.2f} {info.currency}")
+                return True
+            log.warning(f"  Login fallito: {mt5.last_error()} — prossimo tentativo")
+
+    log.error("❌ Tutti i tentativi MT5 falliti. Verifica:")
+    log.error("   1. MT5 è aperto e visibile nel Task Manager?")
+    log.error("   2. MT5 e Python girano con gli stessi privilegi (entrambi admin o entrambi utente)?")
+    log.error("   3. Tools → Opzioni → Expert Advisors → 'Consenti trading algoritmico' spuntato?")
+    log.error("   4. Il pulsante Algo Trading nella toolbar è verde?")
+    log.error(f"   5. MT5_PATH nel .env è corretto? ({MT5_PATH})")
+    return False
 
 
 def disconnect():
@@ -269,26 +298,3 @@ def close_position(ticket: int) -> dict:
     return {"success": True, "ticket": ticket, "close_price": price}
 
 
-def close_all_positions():
-    """Chiude tutte le posizioni aperte sul simbolo."""
-    if not MT5_AVAILABLE:
-        return
-    positions = get_open_positions()
-    for pos in positions:
-        tick = mt5.symbol_info_tick(SYMBOL)
-        price = tick.bid if pos.type == 0 else tick.ask
-        order_type = mt5.ORDER_TYPE_SELL if pos.type == 0 else mt5.ORDER_TYPE_BUY
-        request = {
-            "action":   mt5.TRADE_ACTION_DEAL,
-            "symbol":   SYMBOL,
-            "volume":   pos.volume,
-            "type":     order_type,
-            "position": pos.ticket,
-            "price":    price,
-            "deviation": 10,
-            "magic":    20250314,
-            "comment":  "ForexAIBot_close",
-            "type_filling": mt5.ORDER_FILLING_IOC,
-        }
-        mt5.order_send(request)
-        log.info(f"Posizione {pos.ticket} chiusa.")

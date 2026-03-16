@@ -198,6 +198,7 @@ def print_stats():
     print(f"  Win rate:            {s['win_rate']:.0f}% ({s['winners']}/{s['trades_with_result']})")
     print(f"  PnL totale:          ${s['total_pnl']:.2f}")
     print(f"  HOLD:                {s['holds']}")
-    print(f"  Decisioni cambiate:  {s['changed']} ({s['changed']/s['total']*100:.0f}%)")
+    changed_pct = s['changed'] / s['total'] * 100 if s['total'] > 0 else 0
+    print(f"  Decisioni cambiate:  {s['changed']} ({changed_pct:.0f}%)")
     print(f"  Confidenza media:    {s['avg_confidence']:.1f}%")
     print("=" * 50)

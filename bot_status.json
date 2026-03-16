@@ -1,1 +1,1 @@
-{"phase": "stopped", "symbol": "EURUSD", "timeframe": "H1", "timestamp": "2026-03-15T20:02:33.801304+00:00"}
+{"phase": "scanning", "symbol": "EURUSD", "timeframe": "H1", "dry_run": false, "use_mock": false, "check_interval": 1800, "timestamp": "2026-03-16T19:41:53.574177+00:00"}

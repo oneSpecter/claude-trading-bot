@@ -255,16 +255,6 @@ def apply_prefilter(
     return True, f"Setup {direction} rilevato — RSI={rsi:.1f}, ADX={adx:.1f}, ATR={last['atr']:.5f}"
 
 
-def should_call_claude(df: pd.DataFrame, df_h4: pd.DataFrame = None) -> tuple[bool, str]:
-    """
-    Pre-filtro tecnico su df grezzo.
-    Wrapper di apply_prefilter() — computa gli indicatori al volo.
-    Usa apply_prefilter() direttamente se hai già chiamato compute_all().
-    """
-    df_c = compute_all(df).dropna()
-    return apply_prefilter(df_c, df_h4)
-
-
 def build_technical_summary(df: pd.DataFrame, df_h4: pd.DataFrame = None) -> dict:
     """
     Costruisce un dizionario con TUTTO il contesto tecnico

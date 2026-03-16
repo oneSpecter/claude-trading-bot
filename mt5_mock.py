@@ -292,7 +292,3 @@ def close_position(ticket: int) -> dict:
     return {"success": False}
 
 
-def close_all_positions():
-    global _mock_positions
-    log.info(f"[MOCK] Chiuse {len(_mock_positions)} posizioni.")
-    _mock_positions = []

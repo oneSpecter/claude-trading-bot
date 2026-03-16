@@ -17,6 +17,8 @@ import json
 import os
 import subprocess
 import sys
+import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -31,7 +33,40 @@ from config import (
     REQUIRE_EMA_CROSS, REQUIRE_RSI_ALIGNED, REQUIRE_H4_CONFIRM,
 )
 
-app = FastAPI(title="Forex AI Bot Dashboard", version="1.0.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield   # server in esecuzione
+    # ── Shutdown: ferma il bot se è in esecuzione ──────────────────
+    stop_path = Path(STOP_FLAG)
+    pid_path  = Path(PID_FILE)
+    bot_was_running = False
+
+    # Scrivi stop flag (il bot lo rileva entro 5s)
+    if _bot_is_running():
+        bot_was_running = True
+        stop_path.write_text("stop", encoding="utf-8")
+
+    # Aspetta che il bot termini (max 15s)
+    if bot_was_running:
+        for _ in range(15):
+            time.sleep(1)
+            if not _bot_is_running():
+                break
+        else:
+            # Timeout: termina il subprocess forzatamente se avviato da noi
+            if _bot_process and _bot_process.poll() is None:
+                _bot_process.terminate()
+
+    # Pulizia flag residui
+    for p in (stop_path,):
+        try:
+            if p.exists():
+                p.unlink()
+        except Exception:
+            pass
+
+
+app = FastAPI(title="Forex AI Bot Dashboard", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -46,7 +81,25 @@ COSTS_FILE      = "api_costs.json"
 BOT_CONFIG_FILE = "bot_config.json"
 SETTINGS_FILE   = "bot_settings.json"
 STOP_FLAG       = "bot_stop.flag"
-STALE_THRESHOLD = timedelta(minutes=15)
+PID_FILE        = "bot.pid"
+STALE_THRESHOLD = timedelta(minutes=3)   # heartbeat ogni 60s → 3 min è sufficiente
+
+
+def _bot_is_running() -> bool:
+    """True se il bot è già in esecuzione (controlla PID file + processo vivo)."""
+    # 1. Subprocess avviato da questo server
+    if _bot_process and _bot_process.poll() is None:
+        return True
+    # 2. Bot avviato da CLI (PID file)
+    pid_path = Path(PID_FILE)
+    if pid_path.exists():
+        try:
+            pid = int(pid_path.read_text().strip())
+            os.kill(pid, 0)   # signal 0 = controlla solo se il processo esiste
+            return True
+        except (ProcessLookupError, PermissionError, ValueError, OSError):
+            pass   # processo morto o PID stale
+    return False
 
 SETTINGS_DEFAULTS = {
     "min_confidence":         MIN_CONFIDENCE,
@@ -61,6 +114,17 @@ SETTINGS_DEFAULTS = {
     "require_ema_cross":      REQUIRE_EMA_CROSS,
     "require_rsi_aligned":    REQUIRE_RSI_ALIGNED,
     "require_h4_confirm":     REQUIRE_H4_CONFIRM,
+}
+
+# Limiti min/max per valori numerici — evita impostazioni assurde
+SETTINGS_BOUNDS: dict[str, tuple] = {
+    "min_confidence":       (10,  99),
+    "max_daily_loss_pct":   (0.1, 20.0),
+    "max_trade_duration_h": (1,   168),   # 1h – 1 settimana
+    "session_start_utc":    (0,   23),
+    "session_end_utc":      (1,   24),
+    "web_search_min_score": (10,  99),
+    "adx_threshold":        (10,  60),
 }
 
 _bot_process: subprocess.Popen | None = None
@@ -95,6 +159,8 @@ def get_status():
     if ts_str:
         try:
             ts = datetime.fromisoformat(ts_str)
+            if ts.tzinfo is None:          # naive → assume UTC
+                ts = ts.replace(tzinfo=timezone.utc)
             data["running"] = (datetime.now(timezone.utc) - ts) < STALE_THRESHOLD
         except ValueError:
             data["running"] = False
@@ -187,13 +253,18 @@ async def set_settings(request: Request):
         val = body[key]
         try:
             if isinstance(default, bool):
-                validated[key] = bool(val)
+                coerced = bool(val)
             elif isinstance(default, int):
-                validated[key] = int(val)
+                coerced = int(val)
             elif isinstance(default, float):
-                validated[key] = float(val)
+                coerced = float(val)
             else:
-                validated[key] = val
+                coerced = val
+            # Applica limiti min/max se definiti
+            if key in SETTINGS_BOUNDS and not isinstance(coerced, bool):
+                lo, hi = SETTINGS_BOUNDS[key]
+                coerced = max(lo, min(hi, coerced))
+            validated[key] = coerced
         except (ValueError, TypeError):
             pass  # ignora valori non coercibili
     tmp = SETTINGS_FILE + ".tmp"
@@ -225,9 +296,10 @@ def bot_start(dry_run: bool = True, use_mock: bool = True):
     """Avvia il bot come sottoprocesso."""
     global _bot_process
 
-    # Se il processo è ancora vivo non riavviare
-    if _bot_process and _bot_process.poll() is None:
-        return {"status": "already_running", "pid": _bot_process.pid, "dry_run": dry_run}
+    # Un solo bot alla volta — controlla PID file e subprocess
+    if _bot_is_running():
+        pid = _bot_process.pid if _bot_process and _bot_process.poll() is None else None
+        return {"status": "already_running", "pid": pid, "dry_run": dry_run}
 
     # Rimuovi eventuale flag di stop rimasto
     stop_path = Path(STOP_FLAG)

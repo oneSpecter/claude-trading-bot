@@ -20,6 +20,7 @@ Avvio:
   python bot.py --stats  → mostra statistiche journal
 """
 
+import os
 import sys
 import time
 import json
@@ -52,6 +53,12 @@ logging.basicConfig(
 )
 log = logging.getLogger("ForexAIBot")
 
+# Forza UTF-8 su stdout/stderr per evitare UnicodeEncodeError su Windows (cp1252)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # Import broker:
 #   --dry o USE_MOCK=true → mock sempre (nessuna connessione MT5)
 #   altrimenti            → MT5 reale se disponibile, mock come fallback
@@ -77,6 +84,39 @@ STATUS_FILE   = "bot_status.json"
 CONFIG_FILE   = Path("bot_config.json")
 SETTINGS_FILE = Path("bot_settings.json")
 STOP_FLAG     = Path("bot_stop.flag")
+PID_FILE      = Path("bot.pid")
+
+_last_status: dict = {}   # heartbeat: ultima scrittura status, riusata ogni 60s
+
+
+def _acquire_pid_lock() -> bool:
+    """
+    Scrive il PID corrente in bot.pid.
+    Se un altro processo con lo stesso PID è già attivo → ritorna False (bot duplicato).
+    Gestisce PID file stale (processo morto ma file rimasto).
+    """
+    if PID_FILE.exists():
+        try:
+            old_pid = int(PID_FILE.read_text().strip())
+            # Controlla se il processo è ancora vivo (os.kill con signal 0 = no-op, solo check)
+            os.kill(old_pid, 0)
+            # Processo vivo → bot già in esecuzione
+            return False
+        except (ProcessLookupError, PermissionError):
+            # Processo morto → PID file stale, lo sovrascriviamo
+            pass
+        except (ValueError, OSError):
+            pass  # file corrotto, sovrascriviamo
+    PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
+    return True
+
+
+def _release_pid_lock():
+    try:
+        if PID_FILE.exists():
+            PID_FILE.unlink()
+    except Exception:
+        pass
 
 
 def _read_dry_run(default: bool) -> bool:
@@ -105,6 +145,8 @@ def _read_settings() -> dict:
 
 def _write_status(data: dict):
     """Scrive lo stato corrente del bot su file (letto dalla dashboard)."""
+    global _last_status
+    _last_status = data
     try:
         Path(STATUS_FILE).write_text(
             json.dumps({**data, "timestamp": _utcnow().isoformat()},
@@ -117,11 +159,11 @@ def _write_status(data: dict):
 
 def banner():
     print()
-    print("╔══════════════════════════════════════════════════════╗")
-    print("║   🤖  FOREX AI BOT — Claude + MetaTrader 5           ║")
-    print("║   Strategia: EMA × RSI × ATR + Analisi AI 3-stadi   ║")
-    print(f"║   Simbolo: {SYMBOL:<10} Timeframe: {TIMEFRAME:<8}              ║")
-    print("╚══════════════════════════════════════════════════════╝")
+    print("=" * 56)
+    print("  FOREX AI BOT -- Claude + MetaTrader 5")
+    print("  Strategia: EMA x RSI x ATR + Analisi AI 3-stadi")
+    print(f"  Simbolo: {SYMBOL:<10} Timeframe: {TIMEFRAME}")
+    print("=" * 56)
     print()
 
 
@@ -327,7 +369,7 @@ def tick(dry_run: bool = False) -> bool:
                    "dry_run": dry_run, "use_mock": _force_mock,
                    "check_interval": CHECK_INTERVAL})
 
-    # ── 0. Controlla trade chiusi (SL/TP raggiunto) ──────────────
+    # ── 1. Controlla trade chiusi (SL/TP raggiunto) ──────────────
     try:
         for trade in broker.get_closed_trades():
             profit = trade.get("profit", 0.0)
@@ -346,7 +388,7 @@ def tick(dry_run: bool = False) -> bool:
     except Exception as e:
         log.warning(f"Errore check trade chiusi: {e}")
 
-    # ── 1. Dati mercato ──────────────────────────────────────────
+    # ── 2. Dati mercato ──────────────────────────────────────────
     try:
         df = broker.get_candles()
     except Exception as e:
@@ -355,33 +397,39 @@ def tick(dry_run: bool = False) -> bool:
 
     log.info(f"Candele caricate: {len(df)} | Close={df['close'].iloc[-1]:.5f}")
 
-    # ── 1b. Candele H4 per il filtro trend principale ─────────────
+    # ── 3. Candele H4 per il filtro trend principale ─────────────
     try:
         df_h4 = broker.get_candles(count=H4_CANDLES_LOAD, timeframe="H4")
     except Exception as e:
         log.warning(f"Candele H4 non disponibili: {e} — filtro H4 disabilitato")
         df_h4 = None
 
-    # ── 1c. Calcola indicatori + tech summary una sola volta per tick ──
+    # ── 4. Calcola indicatori + tech summary una sola volta per tick ──
     df_c = compute_all(df).dropna()
     tech = build_technical_summary(df_c, df_h4=df_h4)
 
-    # ── 1d. AI exit check — gestisce trade aperti anche fuori sessione ──
+    # ── 5. AI exit check — gestisce trade aperti anche fuori sessione ──
     _run_exit_checks(tech, dry_run,
                      max_trade_duration_h=settings.get("max_trade_duration_h"),
                      min_confidence=settings.get("min_confidence"))
 
-    # ── 0b. Session filter — blocca solo nuovi trade fuori orario ────────
+    # ── 6. Session filter — blocca solo nuovi trade fuori orario e nel weekend ─
     _sf_enabled = settings.get("session_filter_enabled", SESSION_FILTER_ENABLED)
     _sf_start   = settings.get("session_start_utc",    SESSION_START_UTC)
     _sf_end     = settings.get("session_end_utc",      SESSION_END_UTC)
+    # Forex chiuso: sabato tutto il giorno + domenica prima delle 22:00 UTC
+    weekday = now.weekday()   # 0=Lun … 5=Sab, 6=Dom
+    is_weekend = (weekday == 5) or (weekday == 6 and now.hour < 22)
+    if is_weekend:
+        log.info(f"📅 Mercati chiusi (weekend) — skip")
+        return False
     if _sf_enabled:
         h = now.hour
         if not (_sf_start <= h < _sf_end):
             log.info(f"⏰ Fuori sessione ({h:02d}:00 UTC) — finestra attiva {_sf_start:02d}:00-{_sf_end:02d}:00 UTC")
             return False
 
-    # ── 1e. Limite perdita giornaliera ────────────────────────────
+    # ── 7. Limite perdita giornaliera ────────────────────────────
     _max_daily = settings.get("max_daily_loss_pct", MAX_DAILY_LOSS_PCT)
     if _max_daily > 0:
         daily_pnl = _get_daily_pnl()
@@ -399,7 +447,7 @@ def tick(dry_run: bool = False) -> bool:
         except Exception:
             pass
 
-    # ── 2. Pre-filtro tecnico (gratuito, nessuna API call) ────────
+    # ── 8. Pre-filtro tecnico (gratuito, nessuna API call) ────────
     ok, reason = apply_prefilter(df_c, df_h4,
                                  require_ema_cross=settings.get("require_ema_cross"),
                                  require_rsi_aligned=settings.get("require_rsi_aligned"),
@@ -411,7 +459,7 @@ def tick(dry_run: bool = False) -> bool:
     if not ok:
         return False
 
-    # ── 3. Controlla posizioni aperte ────────────────────────────
+    # ── 9. Controlla posizioni aperte ────────────────────────────
     open_pos = broker.get_open_positions()
     log.info(f"Posizioni aperte: {len(open_pos)}/{MAX_OPEN_TRADES}")
 
@@ -419,7 +467,7 @@ def tick(dry_run: bool = False) -> bool:
         log.info("Limite posizioni raggiunto. Skip.")
         return False
 
-    # ── 4. Tech summary già calcolato al passo 1c — riuso diretto ──
+    # ── 10. Tech summary già calcolato al passo 4 — riuso diretto ──
     log.info(f"Setup tecnico: EMA_trend={tech['ema_trend']} RSI={tech['rsi']} "
              f"ADX={tech['adx']} ({tech['adx_trend']}) ATR={tech['atr']}")
     _write_status({
@@ -435,7 +483,7 @@ def tick(dry_run: bool = False) -> bool:
         "h4_bias":    tech.get("h4_bias"),
     })
 
-    # ── 5. Claude AI (3 stadi) ───────────────────────────────────
+    # ── 11. Claude AI (3 stadi) ──────────────────────────────────
     try:
         decision = analyze(tech,
                            min_confidence=settings.get("min_confidence"),
@@ -456,7 +504,7 @@ def tick(dry_run: bool = False) -> bool:
     if decision.get("decision_changed_after_review"):
         log.info(f"   ⚠️  Decisione cambiata da {decision.get('initial_decision')} a {decision['decision']} dopo review!")
 
-    # ── 6. Esecuzione ────────────────────────────────────────────
+    # ── 12. Esecuzione ───────────────────────────────────────────
     action    = decision["decision"]
     executed  = False
     trade_res = None
@@ -483,7 +531,7 @@ def tick(dry_run: bool = False) -> bool:
     else:
         log.info("HOLD — Nessun ordine.")
 
-    # ── 7. Journal ───────────────────────────────────────────────
+    # ── 13. Journal ──────────────────────────────────────────────
     log_decision(decision, tech, executed, trade_res)
 
     _write_status({
@@ -515,7 +563,12 @@ def main():
 
     banner()
 
+    if not _acquire_pid_lock():
+        log.error("❌ Un'altra istanza del bot è già in esecuzione (bot.pid). Fermala prima di avviarne una nuova.")
+        sys.exit(1)
+
     if not check_config():
+        _release_pid_lock()
         sys.exit(1)
 
     dry_run  = "--dry"  in args
@@ -553,6 +606,9 @@ def main():
             tick(dry_run)
             return
 
+        # Scrivi subito lo stato "idle" così la dashboard vede il bot come running
+        # prima ancora che il primo tick inizi (può richiedere secondi)
+        _write_status({"phase": "idle", "symbol": SYMBOL, "timeframe": TIMEFRAME})
         log.info(f"Bot avviato. Controllo ogni {CHECK_INTERVAL}s. CTRL+C per fermare.")
         consecutive_errors = 0
         while True:
@@ -619,18 +675,23 @@ def main():
                         break
 
             log.info(f"Prossimo controllo tra {CHECK_INTERVAL}s...")
-            # Controlla lo stop flag ogni 5s invece di dormire CHECK_INTERVAL tutto in una volta
-            deadline = time.time() + CHECK_INTERVAL
+            # Controlla lo stop flag ogni 5s; heartbeat ogni 60s per non apparire "morto" alla dashboard
+            deadline      = time.time() + CHECK_INTERVAL
+            heartbeat_at  = time.time() + 60
             while time.time() < deadline:
                 if STOP_FLAG.exists():
                     break
                 time.sleep(5)
+                if _last_status and time.time() >= heartbeat_at:
+                    _write_status(_last_status)
+                    heartbeat_at = time.time() + 60
 
     except KeyboardInterrupt:
         log.info("Bot fermato. Ciao! 👋")
     finally:
         broker.disconnect()
         _write_status({"phase": "stopped", "symbol": SYMBOL, "timeframe": TIMEFRAME})
+        _release_pid_lock()
         print_stats()
 
 

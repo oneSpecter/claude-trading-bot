@@ -446,7 +446,7 @@ Dopo il ragionamento, inserisci esattamente questo separatore seguito dal JSON:
 }}
 </output>"""
 
-    # Fast path: setup molto forte non ha bisogno di elaborazione lunga
+    # 500 token bastano per l'output JSON compatto quando il segnale è già forte (score >= 80)
     tech_s1 = tech.get("technical_score_s1", 50)
     max_tok  = 500 if tech_s1 >= 80 else 900
 

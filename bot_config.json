@@ -1,4 +1,4 @@
 {
-  "dry_run": true,
-  "use_mock": true
+  "dry_run": false,
+  "use_mock": false
 }

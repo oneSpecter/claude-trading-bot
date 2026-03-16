@@ -109,7 +109,7 @@ function ConfidenceChart({ journal, minConfidence = 70 }) {
 }
 
 // ── Top Bar ──────────────────────────────────────────────────────
-function TopBar({ status, lastUpdate, error, onStop, onStart }) {
+function TopBar({ status, lastUpdate, error, onStop, onStart, starting = false }) {
   const [btnLoading, setBtnLoading] = useState(false)
   const [btnMsg,     setBtnMsg]     = useState('')
   const [countdown,  setCountdown]  = useState(null)
@@ -138,7 +138,8 @@ function TopBar({ status, lastUpdate, error, onStop, onStart }) {
     setBtnLoading(true)
     setBtnMsg(label)
     try { await fn() } catch {}
-    setTimeout(() => { setBtnLoading(false); setBtnMsg('') }, 2000)
+    setBtnLoading(false)
+    setBtnMsg('')
   }
 
   const phaseColor = {
@@ -229,12 +230,12 @@ function TopBar({ status, lastUpdate, error, onStop, onStart }) {
             </button>
           ) : (
             <button
-              disabled={btnLoading}
+              disabled={btnLoading || starting}
               onClick={() => handleAction(onStart, 'Avvio in corso…')}
               className="px-3 py-1.5 text-[11px] font-mono rounded-lg
                 bg-green-500/10 border border-green-500/30 text-green-400
                 hover:bg-green-500/20 transition-colors disabled:opacity-50">
-              {btnLoading ? '…' : '▶ Start'}
+              {(btnLoading || starting) ? '…' : '▶ Start'}
             </button>
           )}
         </div>
@@ -607,7 +608,7 @@ function PageMercato({ status, journal, stats, settings }) {
 }
 
 // ── Page: Controllo ───────────────────────────────────────────────
-function PageControllo({ status, config, onUpdate, onStart, onStop }) {
+function PageControllo({ status, config, onUpdate, onStart, onStop, starting = false }) {
   const [btnLoading, setBtnLoading] = useState(false)
   const [btnMsg,     setBtnMsg]     = useState('')
 
@@ -617,7 +618,8 @@ function PageControllo({ status, config, onUpdate, onStart, onStop }) {
     setBtnLoading(true)
     setBtnMsg(label)
     try { await fn() } catch {}
-    setTimeout(() => { setBtnLoading(false); setBtnMsg('') }, 2000)
+    setBtnLoading(false)
+    setBtnMsg('')
   }
 
   return (
@@ -674,12 +676,12 @@ function PageControllo({ status, config, onUpdate, onStart, onStop }) {
                   </button>
                 ) : (
                   <button
-                    disabled={btnLoading}
+                    disabled={btnLoading || starting}
                     onClick={() => handleAction(onStart, 'Avvio in corso…')}
                     className="flex-1 py-3 text-sm font-mono rounded-xl
                       bg-green-500/10 border border-green-500/30 text-green-400
                       hover:bg-green-500/20 transition-colors disabled:opacity-50">
-                    {btnLoading ? '…' : '▶ Avvia il bot'}
+                    {(btnLoading || starting) ? '…' : '▶ Avvia il bot'}
                   </button>
                 )}
               </div>
@@ -803,15 +805,16 @@ function PageStatistiche({ stats, costs, journal, settings }) {
 
 // ── Main App ─────────────────────────────────────────────────────
 export default function App() {
-  const [tab,        setTab]        = useState('market')
-  const [status,     setStatus]     = useState(null)
-  const [journal,    setJournal]    = useState([])
-  const [stats,      setStats]      = useState({})
-  const [costs,      setCosts]      = useState({})
-  const [config,     setConfig]     = useState({ dry_run: true })
-  const [settings,   setSettings]   = useState({})
-  const [lastUpdate, setLastUpdate] = useState(null)
-  const [error,      setError]      = useState(null)
+  const [tab,         setTab]        = useState('market')
+  const [status,      setStatus]     = useState(null)
+  const [journal,     setJournal]    = useState([])
+  const [stats,       setStats]      = useState({})
+  const [costs,       setCosts]      = useState({})
+  const [config,      setConfig]     = useState({ dry_run: true })
+  const [settings,    setSettings]   = useState({})
+  const [lastUpdate,  setLastUpdate] = useState(null)
+  const [error,       setError]      = useState(null)
+  const [botStarting, setBotStarting] = useState(false)   // lock condiviso tra i due pulsanti Start
 
   const fetchAll = useCallback(async () => {
     try {
@@ -852,18 +855,28 @@ export default function App() {
     setTimeout(fetchAll, 1000)
   }
   const handleStart = async () => {
-    // Ri-legge il config dal server nell'istante dell'avvio
-    // per evitare stato React stale (es: mode appena cambiata ma fetch non ancora tornato)
-    let cfg = config
+    if (botStarting) return          // lock: evita doppi avvii dai due pulsanti
+    setBotStarting(true)
     try {
-      const fresh = await fetch('/api/config').then(r => r.json())
-      cfg = fresh
-      setConfig(fresh)
-    } catch { /* usa cache React se server non raggiungibile */ }
-    const useMock = cfg.use_mock ?? true
-    const dryRun  = cfg.dry_run  ?? true
-    await fetch(`/api/bot/start?dry_run=${dryRun}&use_mock=${useMock}`, { method: 'POST' }).catch(() => {})
-    setTimeout(fetchAll, 1000)
+      // Usa lo stato React corrente (già sincronizzato con ModeControl via onUpdate)
+      // NON ri-fetchare da server: bot_config.json può contenere valori stale di run precedenti
+      const useMock = config.use_mock ?? true
+      const dryRun  = config.dry_run  ?? true
+      await fetch(`/api/bot/start?dry_run=${dryRun}&use_mock=${useMock}`, { method: 'POST' }).catch(() => {})
+      // Poll ogni 700ms per max 6s finché il bot risulta running o va in errore
+      for (let i = 0; i < 9; i++) {
+        await new Promise(r => setTimeout(r, 700))
+        try {
+          const s = await fetch('/api/status').then(r => r.json())
+          setStatus(s)
+          if (s?.running)           break   // avviato con successo
+          if (s?.phase === 'error') break   // avvio fallito (es. MT5 non disponibile)
+        } catch { /* ignora errori transitori */ }
+      }
+      fetchAll()
+    } finally {
+      setBotStarting(false)
+    }
   }
 
   const tabVariants = {
@@ -889,6 +902,7 @@ export default function App() {
             error={error}
             onStop={handleStop}
             onStart={handleStart}
+            starting={botStarting}
           />
         </FadeIn>
 
@@ -908,7 +922,7 @@ export default function App() {
             transition={{ duration: 0.2, ease: 'easeInOut' }}
           >
             {tab === 'market'   && <PageMercato     status={status} journal={journal} stats={stats} settings={settings} />}
-            {tab === 'control'  && <PageControllo   status={status} config={config} onUpdate={cfg => setConfig(c => ({ ...c, ...cfg }))} onStart={handleStart} onStop={handleStop} />}
+            {tab === 'control'  && <PageControllo   status={status} config={config} onUpdate={cfg => setConfig(c => ({ ...c, ...cfg }))} onStart={handleStart} onStop={handleStop} starting={botStarting} />}
             {tab === 'stats'    && <PageStatistiche stats={stats} costs={costs} journal={journal} settings={settings} />}
             {tab === 'settings' && (
               <div className="space-y-3 sm:space-y-4">
