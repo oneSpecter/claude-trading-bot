@@ -1,0 +1,6 @@
+timestamp,symbol,decision,confidence,price,sl,tp,lot,rr_ratio,technical_score,fundamental_score,market_regime,initial_decision,decision_changed,reasoning,devil_advocate,executed,ticket,close_price,close_time,close_reason,profit,pips,win
+2026-03-16T22:46:13.356980+00:00,EURUSD,HOLD,0,1.0902,,,,,,,,,,Pre-filtro: Nessun crossover EMA recente (EMA_diff=0.00138),,False,,,,,,,
+2026-03-16T22:46:25.434364+00:00,EURUSD,HOLD,0,1.08724,,,,,,,,,,Pre-filtro: Nessun crossover EMA recente (EMA_diff=0.00125),,False,,,,,,,
+2026-03-16T22:46:38.249628+00:00,EURUSD,HOLD,0,1.08784,,,,,,,,,,Pre-filtro: Nessun crossover EMA recente (EMA_diff=0.00091),,False,,,,,,,
+2026-03-16T22:51:45.226624+00:00,EURUSD,HOLD,0,1.15059,,,,,,,,,,Pre-filtro: Nessun crossover EMA recente (EMA_diff=0.00156),,False,,,,,,,
+2026-03-16T23:07:40.025539+00:00,EURUSD,HOLD,0,1.14989,,,,,,,,,,Pre-filtro: Nessun crossover EMA recente (EMA_diff=0.00144),,False,,,,,,,

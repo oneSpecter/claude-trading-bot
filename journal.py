@@ -10,12 +10,25 @@ import csv
 import os
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from config import SYMBOL
 
 log = logging.getLogger("Journal")
 
 JOURNAL_JSON = "journal.json"
 JOURNAL_CSV  = "journal.csv"
+
+
+def init(base_dir):
+    """
+    Imposta la directory di lavoro per il journal.
+    Chiamato da bot.py all'avvio con il BOT_DIR specifico del bot.
+    Deve essere chiamato prima di qualsiasi altra funzione del journal.
+    """
+    global JOURNAL_JSON, JOURNAL_CSV
+    d = Path(base_dir)
+    JOURNAL_JSON = str(d / "journal.json")
+    JOURNAL_CSV  = str(d / "journal.csv")
 CSV_FIELDS   = [
     "timestamp", "symbol", "decision", "confidence",
     "price", "sl", "tp", "lot", "rr_ratio",
@@ -23,6 +36,9 @@ CSV_FIELDS   = [
     "initial_decision", "decision_changed",
     "reasoning", "devil_advocate",
     "executed", "ticket",
+    # Risultato trade (popolato da log_trade_result)
+    "close_price", "close_time", "close_reason",
+    "profit", "pips", "win",
 ]
 
 

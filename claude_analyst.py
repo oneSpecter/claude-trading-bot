@@ -52,6 +52,20 @@ HEADERS = {
 
 # ── Costi API ───────────────────────────────────────────────────
 COSTS_FILE = "api_costs.json"
+_bot_id    = "default"
+
+
+def init(base_dir, bot_id: str = "default"):
+    """
+    Imposta la directory costi e il bot_id corrente.
+    Chiamato da bot.py all'avvio con il BOT_DIR specifico del bot.
+    """
+    global COSTS_FILE, _bot_id
+    from pathlib import Path
+    COSTS_FILE = str(Path(base_dir) / "api_costs.json")
+    _bot_id    = bot_id
+
+
 PRICING = {
     "claude-haiku-4-5-20251001": {
         "input":       0.80 / 1_000_000,
@@ -99,6 +113,7 @@ def _track_cost(response: dict, stage: str, web_search: bool = False) -> float:
         "timestamp":     datetime.now(timezone.utc).isoformat(),
         "stage":         stage,
         "model":         model,
+        "bot_id":        _bot_id,
         "input_tokens":  inp,
         "output_tokens": out,
         "cache_read":    c_read,

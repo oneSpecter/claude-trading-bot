@@ -16,7 +16,7 @@ function colorLine(line) {
   return 'text-gray-300'
 }
 
-export default function LogPanel({ tall = false }) {
+export default function LogPanel({ tall = false, botId }) {
   const [lines,      setLines]      = useState([])
   const [total,      setTotal]      = useState(0)
   const [autoScroll, setAutoScroll] = useState(true)
@@ -24,14 +24,16 @@ export default function LogPanel({ tall = false }) {
   const containerRef = useRef(null)
   const clearOffset  = useRef(0)   // righe da saltare dopo Clear
 
+  const logsUrl = botId ? `/api/bots/${botId}/logs?lines=150` : '/api/logs?lines=150'
+
   const fetchLogs = useCallback(async () => {
     try {
-      const data = await fetch('/api/logs?lines=150').then(r => r.json())
+      const data = await fetch(logsUrl).then(r => r.json())
       const all = data.lines ?? []
       setLines(all.slice(clearOffset.current))
       setTotal(data.total ?? 0)
     } catch { /* server non raggiungibile */ }
-  }, [])
+  }, [logsUrl])
 
   useEffect(() => {
     fetchLogs()

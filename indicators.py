@@ -244,14 +244,21 @@ def apply_prefilter(
     if _req_adx and adx < _adx_thr:
         return False, f"Mercato ranging — ADX={adx:.1f} < {_adx_thr} (nessun trend)"
 
-    if _req_h4 and df_h4 is not None:
+    if _req_h4:
+        if df_h4 is None:
+            return False, "H4 non disponibile — conferma multi-timeframe richiesta dalla strategia"
         h4_bias = get_h4_bias(df_h4)
         if cross_dir == 1 and h4_bias == "BEARISH":
             return False, f"Cross H1 rialzista ma H4 ribassista — contro-trend, skip"
         if cross_dir == -1 and h4_bias == "BULLISH":
             return False, f"Cross H1 ribassista ma H4 rialzista — contro-trend, skip"
 
-    direction = "LONG" if cross_dir == 1 else "SHORT"
+    if cross_dir == 1:
+        direction = "LONG"
+    elif cross_dir == -1:
+        direction = "SHORT"
+    else:
+        direction = "NEUTRAL"
     return True, f"Setup {direction} rilevato — RSI={rsi:.1f}, ADX={adx:.1f}, ATR={last['atr']:.5f}"
 
 

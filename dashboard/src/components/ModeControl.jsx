@@ -59,7 +59,11 @@ function currentModeKey(config) {
   return 'trade'
 }
 
-export default function ModeControl({ config, onUpdate, botRunning }) {
+export default function ModeControl({ config, onUpdate, botRunning, botId }) {
+  // Per multi-bot usa /api/bots/{botId}/config, altrimenti legacy /api/config
+  const configEndpoint = botId
+    ? `/api/bots/${botId}/config`
+    : '/api/config'
   const [showConfirm, setShowConfirm] = useState(null)
   const [loading,     setLoading]     = useState(false)
 
@@ -85,7 +89,7 @@ export default function ModeControl({ config, onUpdate, botRunning }) {
     setShowConfirm(null)
     const cfg = MODES[newKey].config
     try {
-      await fetch(`/api/config?dry_run=${cfg.dry_run}&use_mock=${cfg.use_mock}`, { method: 'POST' })
+      await fetch(`${configEndpoint}?dry_run=${cfg.dry_run}&use_mock=${cfg.use_mock}`, { method: 'POST' })
       onUpdate(cfg)
     } catch { /* ignora errori di rete */ }
     finally { setLoading(false) }

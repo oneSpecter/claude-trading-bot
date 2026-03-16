@@ -1,0 +1,24 @@
+[
+  {
+    "bot_id": "eurusd_ai",
+    "symbol": "EURUSD",
+    "symbol_base": "EUR",
+    "symbol_quote": "USD",
+    "central_bank_base": "BCE (Banca Centrale Europea)",
+    "central_bank_quote": "Federal Reserve (Fed)",
+    "strategy": "ema_rsi_ai",
+    "params": {},
+    "enabled": true
+  },
+  {
+    "bot_id": "eurusd_main",
+    "symbol": "EURUSD",
+    "symbol_base": "EUR",
+    "symbol_quote": "USD",
+    "central_bank_base": "BCE (Banca Centrale Europea)",
+    "central_bank_quote": "Federal Reserve (Fed)",
+    "strategy": "ema_rsi_ai_main",
+    "params": {},
+    "enabled": true
+  }
+]

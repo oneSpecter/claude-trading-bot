@@ -1,13 +1,60 @@
 # Forex AI Bot — Claude + MetaTrader 5
 
-Bot di trading automatico per EUR/USD (e altri simboli forex) che unisce **analisi tecnica locale**, **intelligenza artificiale Claude** con web search in tempo reale e una **dashboard React** accessibile anche da remoto via Tailscale.
+Bot di trading automatico multi-simbolo che unisce **analisi tecnica locale**, **intelligenza artificiale Claude** con web search in tempo reale e una **dashboard React** con gestione di più bot in parallelo.
 
 ---
 
-## Come funziona — flusso completo
+## Architettura — Multi-Bot
+
+Il sistema supporta N bot in parallelo, ognuno su simbolo/strategia diversa, gestiti da un unico server FastAPI.
 
 ```
-MetaTrader 5  (o mock sintetico / CSV storico)
+Dashboard React (localhost:8000)
+    │
+    ├── BotGrid        — vista griglia di tutti i bot configurati
+    └── BotDashboard   — vista dettaglio singolo bot (journal, log, costi, controlli)
+               │
+         FastAPI server.py
+               │
+    ┌──────────┴──────────────────────────────────────┐
+    │  bot.py --bot-id X --symbol Y --strategy Z      │
+    │  bot.py --bot-id A --symbol B --strategy W      │  ← processi separati
+    └─────────────────────────────────────────────────┘
+               │
+    bots/{bot_id}/
+        ├── bot_status.json   ← stato live (prezzo, fase, indicatori)
+        ├── bot_config.json   ← config runtime (dry_run, use_mock)
+        ├── journal.json / journal.csv
+        ├── api_costs.json
+        └── bot.log
+```
+
+---
+
+## Strategie disponibili
+
+| Strategia | Tipo | Costo API | Quando usarla |
+|-----------|------|-----------|---------------|
+| `ema_rsi_ai_main` | AI 3-stage completa | ~$0.02/analisi | Trend forti, qualità massima (ADX ≥ 30, H4 richiesto, conf ≥ 78%) |
+| `ema_rsi_ai` | AI standard | ~$0.008/analisi | Uso generale (ADX ≥ 25, H4 consigliato, conf ≥ 65%) |
+| `ema_rsi_ai_scalp` | AI scalping | ~$0.005/analisi | Sessioni veloci, SL/TP stretti, posizioni brevi |
+| `ema_rsi_manual` | Rule-based (no AI) | $0 | Costo zero, logic pura EMA × RSI × ADX |
+
+### Confronto parametri SL/TP
+
+| Strategia | SL | TP | R/R atteso | Conf. min |
+|-----------|----|----|------------|-----------|
+| `ema_rsi_ai_main` | ATR × 1.5 | ATR × 3.5 | > 2.3 | 78% |
+| `ema_rsi_ai` | ATR × 1.5 | ATR × 2.5 | ~1.67 | 65% |
+| `ema_rsi_ai_scalp` | ATR × 1.0 | ATR × 1.8 | 1.8 | 60% |
+| `ema_rsi_manual` | ATR × 1.5 | ATR × 2.5 | ~1.67 | — |
+
+---
+
+## Flusso di analisi per tick
+
+```
+MetaTrader 5 (o mock sintetico / CSV storico)
     │
     ├── Candele H1 (150 barre)
     └── Candele H4 (100 barre, bias principale)
@@ -18,7 +65,7 @@ MetaTrader 5  (o mock sintetico / CSV storico)
    │  EXIT CHECK  (gira sempre, anche fuori sessione)             │
    │  Per ogni posizione aperta (skip prima ora):                 │
    │  1. Scadenza tempo → chiude se > MAX_TRADE_DURATION_H        │
-   │  2. Claude AI → valuta se chiudere prima dello SL            │
+   │  2. Strategy.should_exit() → RSI estremo / EMA inversion     │
    └──────────────────────────────────────────────────────────────┘
                │
    ┌── Limite perdita giornaliera ──┐
@@ -29,26 +76,25 @@ MetaTrader 5  (o mock sintetico / CSV storico)
    │  (07:00-21:00 UTC)│  ← blocca solo NUOVI trade fuori orario
    └──────────────────┘
                │
-   Pre-filtro tecnico (GRATUITO — nessuna API call)
-        EMA cross recente?  +  RSI allineato?  +  ADX ≥ 25?  +  H4 bias ok?
-               │  solo se PASS
-   Claude — Stadio 1: Analisi tecnica → technical_score (0-100)
+   Pre-filtro tecnico (strategy.should_trade() — GRATUITO per Manual)
+        EMA cross recente?  +  RSI allineato?  +  ADX ≥ soglia?  +  H4 bias ok?
+               │  solo se PASS e strategia AI:
+   Claude — Stage 1: Analisi tecnica → technical_score (0-100)
                │
-               ├── score < 65 → SKIP Stage2 (risparmio web search)
+               ├── score < 65 → SKIP Stage 2 (risparmio web search)
                │
-   Claude — Stadio 2: Web Search → notizie BCE/Fed, NFP, CPI, geopolitica
+   Claude — Stage 2: Web Search → notizie BCE/Fed, NFP, CPI, geopolitica
                │
-   Claude — Stadio 3: Decisione finale + Devil's Advocate
-               │       applica regole R1-R3 (convergenza, R/R, ADX)
-               │       [R3 anche enforced in post-processing]
+   Claude — Stage 3: Decisione finale + Devil's Advocate
+               │       post-processing: convergence guard + R/R guard + ADX guard
                │
-        confidence ≥ 65%?
+        confidence ≥ soglia?
                │
    Validazione trade (SL/TP coerenti con direzione)
                │
    MetaTrader 5 → open_trade(BUY/SELL, sl, tp)
                │
-         journal.json / journal.csv
+         bots/{bot_id}/journal.json + journal.csv
 ```
 
 ---
@@ -60,7 +106,7 @@ MetaTrader 5  (o mock sintetico / CSV storico)
 - Windows (per MT5 reale) — Mac/Linux usa il mock automatico
 - Node.js 18+ (per la dashboard)
 - Conto demo IC Markets o MetaQuotes-Demo
-- API key Anthropic (console.anthropic.com)
+- API key Anthropic (necessaria solo per strategie AI)
 
 ### 1. Clona e installa dipendenze
 
@@ -79,7 +125,7 @@ cp .env.example .env
 Apri `.env` e compila:
 
 ```env
-ANTHROPIC_API_KEY=sk-ant-...          # da console.anthropic.com
+ANTHROPIC_API_KEY=sk-ant-...          # da console.anthropic.com (non serve per ema_rsi_manual)
 MT5_LOGIN=52791842                     # numero account demo MT5
 MT5_PASSWORD=la_tua_password
 MT5_SERVER=ICMarketsEU-Demo            # o MetaQuotes-Demo
@@ -101,26 +147,40 @@ npm run build       # build di produzione (servita da FastAPI)
 
 ## Avvio
 
-### Metodo consigliato
+### Metodo consigliato — Dashboard
 
-Apri **2 terminali**:
+Apri **un solo terminale**:
 
-**Terminale 1 — Server + Dashboard:**
 ```bash
 uvicorn server:app --host 0.0.0.0 --port 8000
 ```
-Apri il browser su `http://localhost:8000`
 
-**Terminale 2 — Bot (opzionale, puoi avviarlo anche dalla dashboard):**
+Apri il browser su `http://localhost:8000` e crea i bot dalla dashboard (pulsante **+ Nuovo Bot**).
+
+### Avvio manuale da CLI (opzionale)
+
 ```bash
-python bot.py --dry --mock    # MOCK: dati sintetici, nessun ordine
-python bot.py --dry           # WATCH: dati MT5 reali, nessun ordine
-python bot.py                 # TRADE: dati MT5 reali + ordini demo
-python bot.py --once          # singolo ciclo (debug)
-python bot.py --stats         # mostra statistiche journal
+# Bot AI su EURUSD
+python bot.py --bot-id eurusd_main --symbol EURUSD --strategy ema_rsi_ai_main --dry
+
+# Bot manual su GBPUSD senza costi API
+python bot.py --bot-id gbpusd_manual --symbol GBPUSD --strategy ema_rsi_manual --dry --mock
+
+# Parametri utili
+python bot.py --once     # singolo ciclo (debug)
+python bot.py --stats    # mostra statistiche journal
 ```
 
-> **Nota MT5:** Deve essere aperto e con **Algo Trading abilitato** (bottone verde nella toolbar) prima di avviare il bot in modalità WATCH o TRADE.
+| Flag | Significato |
+|------|-------------|
+| `--dry` | DRY-RUN: analisi completa, nessun ordine reale |
+| `--mock` | Dati sintetici, non richiede MT5 |
+| `--bot-id ID` | Identificativo bot (default: `default`) |
+| `--symbol SYM` | Simbolo forex (default: da config.py) |
+| `--strategy NAME` | Strategia da usare (default: `ema_rsi_ai`) |
+| `--params '{"k":v}'` | Parametri JSON per la strategia |
+
+> **Nota MT5:** Deve essere aperto e con **Algo Trading abilitato** (bottone verde nella toolbar) prima di avviare in modalità WATCH o TRADE.
 
 ---
 
@@ -128,18 +188,29 @@ python bot.py --stats         # mostra statistiche journal
 
 Accessibile su `http://localhost:8000` (o `http://<ip-tailscale>:8000` da iPhone).
 
+### Vista griglia (home)
+
+Mostra tutti i bot configurati in card compatte con:
+- Stato (running / stopped / error) e fase corrente
+- Prezzo corrente e ultima decisione del journal
+- Badge strategia colorato per tipo (AI Main / AI Standard / AI Scalp / Manuale)
+- Pulsanti Start / Stop / Apri (→ vista dettaglio)
+- Barra statistiche globali aggregate (P&L totale, win rate, trade aperti)
+
+### Vista dettaglio bot
+
 | Sezione | Contenuto |
 |---------|-----------|
-| **Top bar** | Stato bot, prezzo corrente, fase, H4 bias, pulsanti Start/Stop |
+| **Top bar** | Stato, prezzo, fase, H4 bias, pulsanti Start/Stop |
 | **Stats row** | Win rate, P&L totale, confidenza media, tasso HOLD |
 | **Stato mercato** | EMA trend, RSI, ADX, H4 bias + ultima analisi Claude |
 | **Confidence chart** | Ultime 40 decisioni con confidenza — BUY/SELL/HOLD |
-| **Modalità operativa** | Selettore MOCK / WATCH / TRADE con conferma per TRADE |
 | **Costi API** | Breakdown per stage, oggi, mese, totale |
 | **Decision table** | Journal ultime 15 decisioni con R/R, score, P&L |
+| **Modalità operativa** | Selettore MOCK / WATCH / TRADE con conferma per TRADE |
 | **Log panel** | Log in tempo reale, color-coded, auto-scroll, clear |
 
-### 3 modalità operative (selezionabili dalla dashboard)
+### 3 modalità operative
 
 | Modalità | Dati | Ordini | Quando usarla |
 |----------|------|--------|---------------|
@@ -158,68 +229,31 @@ Il cambio su MOCK richiede il **riavvio del bot**.
 
 ---
 
-## Strategia di trading
+## Strategia Manual — `ema_rsi_manual`
 
-### Pre-filtro tecnico (4 condizioni, tutte obbligatorie)
+Logica rule-based pura, nessuna chiamata API, costo $0.
 
-| Condizione | Parametro | Logica |
-|------------|-----------|--------|
-| EMA crossover recente | EMA 9 / EMA 21 | Crossover nelle ultime 3 candele H1 |
-| RSI allineato | RSI 14, soglie 45/55 | Long: RSI > 45 · Short: RSI < 55 |
-| ADX trending | ADX 14 ≥ 25 | Filtra mercati ranging (falsi segnali) |
-| H4 bias ok | EMA 9/21 su H4 (threshold dinamico) | Non tradare contro il trend principale |
+**Entrata:**
+- BUY → EMA fast > EMA slow (RIALZISTA) + RSI ≥ `rsi_bull_min` + ADX ≥ `adx_min` + H4 bullish/neutral
+- SELL → EMA fast < EMA slow (RIBASSISTA) + RSI ≤ `rsi_bear_max` + ADX ≥ `adx_min` + H4 bearish/neutral
+- HOLD → condizioni non soddisfatte
 
-### Risk Management
+**Uscita anticipata:**
+- RSI ≥ `rsi_exit_high` su BUY → chiudi (ipercomprato)
+- RSI ≤ `rsi_exit_low` su SELL → chiudi (ipervenduto)
+- Inversione EMA + MACD confermata → chiudi
 
-| Parametro | Valore | Formula |
-|-----------|--------|---------|
-| Stop Loss | 1.5 × ATR | `price ± ATR(14) × 1.5` |
-| Take Profit | 2.5 × ATR | `price ± ATR(14) × 2.5` |
-| Risk per trade | 1% del capitale | `lot = (balance × 0.01) / (pip_risk × contract_size)` |
-| R/R atteso | ~1.67 | 2.5 / 1.5 |
-| Max posizioni | 1 | Una posizione aperta alla volta |
-| Limite perdita giornaliera | 2% | Stop nuovi trade se P&L oggi < -2% del saldo |
+**Parametri configurabili:**
 
-### Gestione posizioni aperte (AI Exit)
-
-Il bot monitora ogni posizione aperta ad ogni tick (5 min), **anche fuori orario**, e la chiude anticipatamente se:
-
-- **Scadenza tempo** — aperta da più di `MAX_TRADE_DURATION_H` ore (default 24h)
-- **Inversione trend** — EMA/MACD opposti alla direzione del trade
-- **RSI esausto** — > 78 per BUY, < 22 per SELL
-- **Trend in esaurimento** — ADX < 20
-- **Profitto a rischio** — P&L > 30% del TP + segnale di inversione
-
-> L'exit check viene skippato nella **prima ora** dal trade aperto per evitare rumore.
-
----
-
-## Analisi AI — 3 stadi
-
-### Stadio 1 — Analisi tecnica (sempre)
-Claude riceve tutti gli indicatori + ultime 10 candele e restituisce:
-- Brief tecnico professionale (200 parole)
-- `technical_score` (0-100)
-- `bias` (bullish / bearish / neutral)
-
-### Stadio 2 — Web Search (solo se score ≥ 65)
-Claude cerca autonomamente notizie recenti su BCE, Fed, NFP, CPI, geopolitica e restituisce:
-- Brief fondamentale (200 parole)
-- `fundamental_score` (0-100)
-- `convergence` (aligned / divergent / neutral)
-
-### Stadio 3 — Decisione finale + Devil's Advocate
-Claude applica 3 regole obbligatorie (enforce anche in post-processing):
-
-| Regola | Condizione | Effetto |
-|--------|------------|---------|
-| **R1 — Convergenza** | Tecnico e fondamentale divergono > 30 punti | -20 confidence |
-| **R2 — Risk/Reward** | R/R < 1.5 | Considera seriamente HOLD |
-| **R3 — Trend debole** | ADX < 20 | -15 confidence, privilegia HOLD |
-
-Poi sfida la propria decisione con **2 rischi specifici** (devil's advocate). Se la decisione regge → trade. Se no → HOLD.
-
-> Per setup con score ≥ 80, il modello usa un path accelerato (meno token, stessa qualità).
+| Parametro | Default | Descrizione |
+|-----------|---------|-------------|
+| `rsi_bull_min` | 50 | RSI minimo per BUY |
+| `rsi_bear_max` | 50 | RSI massimo per SELL |
+| `adx_min` | 25 | ADX minimo (mercato trending) |
+| `confidence` | 70 | Confidenza fissa del segnale |
+| `require_h4` | true | Richiedi conferma bias H4 |
+| `rsi_exit_high` | 75 | RSI chiusura BUY |
+| `rsi_exit_low` | 25 | RSI chiusura SELL |
 
 ---
 
@@ -239,13 +273,55 @@ Poi sfida la propria decisione con **2 rischi specifici** (devil's advocate). Se
 
 ---
 
+## Risk Management
+
+| Parametro | Valore default | Formula |
+|-----------|----------------|---------|
+| Risk per trade | 1% del capitale | `lot = (balance × 0.01) / (pip_risk × contract_size)` |
+| Max posizioni | 1 per bot | Una posizione aperta per bot alla volta |
+| Limite perdita giornaliera | 2% | Stop nuovi trade se P&L oggi < -2% del saldo |
+| Scadenza trade | 24h | Chiusura automatica dopo MAX_TRADE_DURATION_H |
+
+---
+
+## Costi API stimati
+
+| Scenario | Costo/mese stimato |
+|----------|--------------------|
+| Haiku, stage2 skippato spesso (score < 65) | ~$3-5 |
+| Haiku con web search regolare | ~$6-10 |
+| Sonnet (analisi più profonde) | ~$12-18 |
+| Manual strategy (ema_rsi_manual) | **$0** |
+
+**Ottimizzazioni attive:**
+- Prompt caching sul system prompt (−70% token fissi)
+- Gate stage1→stage2: web search solo se score ≥ 65
+- Fast path stage3: max_tokens ridotti per setup score ≥ 80
+- Exit check skip: nessuna chiamata AI nella prima ora dal trade
+
+---
+
+## Sicurezza e protezioni
+
+| Protezione | Descrizione |
+|------------|-------------|
+| Validazione trade | SL/TP controllati prima dell'esecuzione — blocca ordini con parametri invertiti |
+| Limite perdita giornaliera | Stop automatico se P&L oggi < -MAX_DAILY_LOSS_PCT% |
+| Max errori consecutivi | Il bot si ferma dopo 3 errori MT5 di fila |
+| Fase "error" | Dashboard segnala in rosso e sblocca Start per riavvio |
+| DRY-RUN | Nessun ordine reale — analisi completa ma esecuzione bloccata |
+| Conferma TRADE | Passare a TRADE dalla dashboard richiede conferma esplicita |
+| API key check | Il bot verifica la presenza dell'API key all'avvio (solo strategie AI) |
+
+---
+
 ## Configurazione completa
 
 Tutte le impostazioni sono in `config.py` e sovrascrivibili via `.env`:
 
 | Variabile | Default | Descrizione |
 |-----------|---------|-------------|
-| `SYMBOL` | EURUSD | Simbolo da tradare |
+| `SYMBOL` | EURUSD | Simbolo da tradare (default, override da CLI) |
 | `TIMEFRAME` | H1 | Timeframe principale |
 | `CLAUDE_MODEL` | claude-haiku-4-5-20251001 | Modello AI (haiku=economico, sonnet=profondo) |
 | `MIN_CONFIDENCE` | 65 | Confidenza minima Claude per aprire trade (%) |
@@ -266,46 +342,21 @@ Tutte le impostazioni sono in `config.py` e sovrascrivibili via `.env`:
 
 ---
 
-## Costi API stimati
-
-| Scenario | Costo/mese stimato |
-|----------|--------------------|
-| Haiku, stage2 skippato spesso (score < 65) | ~$3-5 |
-| Haiku con web search regolare | ~$6-10 |
-| Sonnet (analisi più profonde) | ~$12-18 |
-
-**Ottimizzazioni attive:**
-- Prompt caching sul system prompt (−70% token fissi)
-- Gate stage1→stage2: web search solo se score ≥ 65 (era 55)
-- Fast path stage3: max_tokens ridotti per setup score ≥ 80
-- Exit check skip: nessuna chiamata AI nella prima ora dal trade
-
----
-
-## Sicurezza e protezioni
-
-| Protezione | Descrizione |
-|------------|-------------|
-| Validazione trade | SL/TP controllati prima dell'esecuzione — blocca ordini con parametri invertiti |
-| Limite perdita giornaliera | Stop automatico se P&L oggi < -MAX_DAILY_LOSS_PCT% |
-| Max errori consecutivi | Il bot si ferma dopo 3 errori MT5 di fila |
-| Fase "error" | Dashboard segnala in rosso e sblocca Start per riavvio |
-| DRY-RUN | Nessun ordine reale — analisi completa ma esecuzione bloccata |
-| Conferma TRADE | Passare a TRADE dalla dashboard richiede conferma esplicita |
-
----
-
 ## File di dati generati
+
+Per ogni bot, tutti i file sono in `bots/{bot_id}/`:
 
 | File | Contenuto |
 |------|-----------|
+| `bot_status.json` | Stato live del bot (letto dalla dashboard ogni 5s) |
+| `bot_config.json` | Configurazione runtime (dry_run, use_mock) — modificabile dalla dashboard |
 | `journal.json` | Storico completo decisioni con brief Claude, R/R, P&L |
 | `journal.csv` | Versione tabellare per Excel/pandas |
 | `api_costs.json` | Costi API dettagliati per ogni chiamata |
-| `bot_status.json` | Stato live del bot (letto dalla dashboard ogni 5s) |
-| `bot_config.json` | Configurazione runtime (dry_run, use_mock) — modificabile dalla dashboard |
 | `bot.log` | Log completo del bot |
-| `bot_stop.flag` | Se esiste → il bot si ferma al prossimo tick |
+| `bot.pid` | PID del processo (per gestione start/stop) |
+
+Il registro di tutti i bot configurati è in `bots_config.json` nella root.
 
 ---
 
@@ -313,18 +364,32 @@ Tutte le impostazioni sono in `config.py` e sovrascrivibili via `.env`:
 
 ```
 claude-trading-bot/
-├── bot.py                  # Loop principale — orchestrazione tick
+├── bot.py                  # Loop principale — orchestrazione tick, CLI args
 ├── config.py               # Configurazione centrale + variabili .env
-├── indicators.py           # Indicatori tecnici (EMA, RSI, ATR, ADX, MACD, BB)
+├── indicators.py           # Indicatori tecnici (EMA, RSI, ATR, ADX, MACD, BB) + pre-filtro
 ├── claude_analyst.py       # AI 3 stadi + exit check + cost tracking
 ├── mt5_broker.py           # Wrapper MetaTrader 5 (Windows)
 ├── mt5_mock.py             # Broker simulato con SL/TP automatici
 ├── journal.py              # Trade journal JSON + CSV + statistiche
-├── server.py               # FastAPI: API dashboard + avvio subprocess bot
+├── server.py               # FastAPI: API multi-bot + avvio subprocess
+├── strategies/
+│   ├── __init__.py         # Plugin loader: load_strategy(name, params)
+│   ├── base.py             # BaseStrategy ABC (should_trade / should_exit)
+│   ├── ema_rsi_ai_main.py  # AI 3-stage completa (massima qualità)
+│   ├── ema_rsi_ai.py       # AI standard (uso generale)
+│   ├── ema_rsi_ai_scalp.py # AI scalping (trade veloci)
+│   └── ema_rsi_manual.py   # Rule-based senza AI (costo $0)
+├── bots/
+│   └── {bot_id}/           # Directory per-bot (status, journal, log, config)
+├── bots_config.json        # Registro di tutti i bot configurati
 ├── dashboard/
 │   ├── src/
-│   │   ├── App.jsx                      # Layout principale
+│   │   ├── App.jsx                      # Root: BotGrid + BotDashboard con routing
 │   │   └── components/
+│   │       ├── BotCard.jsx              # Card bot nella griglia
+│   │       ├── BotDashboard.jsx         # Vista dettaglio singolo bot
+│   │       ├── GlobalStats.jsx          # Statistiche aggregate multi-bot
+│   │       ├── NewBotModal.jsx          # Modal creazione nuovo bot
 │   │       ├── LogPanel.jsx             # Log real-time
 │   │       ├── ModeControl.jsx          # Selettore MOCK/WATCH/TRADE
 │   │       └── ui.jsx                   # Componenti UI (GlowCard, AnimatedNumber…)
@@ -344,7 +409,7 @@ MOCK_DATA_FILE=dati_eurusd.csv    # opzionale: CSV con dati reali da histdata.co
 ```
 
 ```bash
-python bot.py --dry --mock    # dati sintetici + nessun ordine reale
+python bot.py --bot-id test --symbol EURUSD --strategy ema_rsi_manual --dry --mock
 ```
 
 Il mock simula:
