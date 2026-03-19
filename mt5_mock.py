@@ -17,6 +17,10 @@ from config import MOCK_DATA_FILE, TIMEFRAME as _TF
 
 log = logging.getLogger("MT5Mock")
 
+# Magic number per isolare le posizioni di questo bot
+# (sovrascrivibile da bot.py: broker.MAGIC = <valore>)
+MAGIC: int = 20250314
+
 # Stato simulato
 _mock_balance        = 10000.0
 _mock_positions      = []
@@ -221,7 +225,7 @@ def get_account_info() -> dict:
 
 
 def get_open_positions() -> list:
-    return _mock_positions
+    return [p for p in _mock_positions if p.get("magic", MAGIC) == MAGIC]
 
 
 def calculate_lot_size(price: float, sl: float) -> float:
@@ -248,6 +252,7 @@ def open_trade(direction: str, sl: float, tp: float) -> dict:
         "lot":       lot,
         "sl":        sl,
         "tp":        tp,
+        "magic":     MAGIC,
         "time":      datetime.now(timezone.utc).isoformat(),
     }
     _mock_positions.append(trade)

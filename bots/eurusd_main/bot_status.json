@@ -1,1 +1,1 @@
-{"phase": "stopped", "symbol": "EURUSD", "timeframe": "H1", "timestamp": "2026-03-16T23:00:43.839187+00:00"}
+{"phase": "idle", "symbol": "EURUSD", "timeframe": "H1", "dry_run": false, "price": 1.15846, "ema_trend": "RIALZISTA", "rsi": 76.2, "adx": 31.2, "adx_trend": "TRENDING", "h4_bias": "NEUTRAL", "last_decision": "HOLD", "last_confidence": 0, "last_regime": null, "web_search_done": false, "tech_score_s1": null, "timestamp": "2026-03-19T20:15:09.639832+00:00"}

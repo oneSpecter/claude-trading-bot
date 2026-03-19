@@ -1,0 +1,2 @@
+timestamp,symbol,decision,confidence,price,sl,tp,lot,rr_ratio,technical_score,fundamental_score,market_regime,initial_decision,decision_changed,reasoning,devil_advocate,executed,ticket,close_price,close_time,close_reason,profit,pips,win
+2026-03-19T20:13:17.353414+00:00,EURUSD,HOLD,0,1.15846,,,,,,,,,,Pre-filtro scalp: Nessun crossover EMA recente (EMA_diff=0.00256),,False,,,,,,,

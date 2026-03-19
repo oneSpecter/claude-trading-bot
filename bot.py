@@ -23,6 +23,7 @@ Avvio multi-bot:
 """
 
 import argparse
+import hashlib
 import os
 import sys
 import time
@@ -545,6 +546,11 @@ def main():
     bot_id        = args.bot_id
     strategy_name = args.strategy
 
+    # ── 1b. Imposta magic number unico per bot ────────────────────
+    # Derivato dal bot_id con MD5 → stabile tra riavvii, univoco per nome
+    _magic = int(hashlib.md5(bot_id.encode()).hexdigest()[:6], 16) % 900000 + 100000
+    broker.MAGIC = _magic
+
     # ── 2. Crea directory bot ─────────────────────────────────────
     BOT_DIR       = Path("bots") / bot_id
     BOT_DIR.mkdir(parents=True, exist_ok=True)
@@ -611,7 +617,7 @@ def main():
     try:
         strategy_params = json.loads(args.params)
         _strategy = load_strategy(strategy_name, strategy_params)
-        log.info(f"Strategia caricata: {strategy_name} | params={strategy_params}")
+        log.info(f"Strategia caricata: {strategy_name} | params={strategy_params} | magic={_magic}")
     except Exception as e:
         log.error(f"Impossibile caricare la strategia '{strategy_name}': {e}")
         _release_pid_lock()

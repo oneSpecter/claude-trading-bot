@@ -18,6 +18,10 @@ from config import (
 
 log = logging.getLogger("MT5Broker")
 
+# Magic number per isolare le posizioni di questo bot dalle altre
+# (sovrascrivibile da bot.py: broker.MAGIC = <valore>)
+MAGIC: int = 20250314
+
 # Mappa timeframe stringa → costante MT5
 TF_MAP = {
     "M1":  1,   "M5":  5,   "M15": 15,  "M30": 30,
@@ -132,13 +136,13 @@ def get_account_info() -> dict:
 
 
 def get_open_positions() -> list:
-    """Restituisce le posizioni aperte sul simbolo."""
+    """Restituisce le posizioni aperte sul simbolo con il magic number di questo bot."""
     if not MT5_AVAILABLE:
         return []
     positions = mt5.positions_get(symbol=SYMBOL)
     if positions is None:
         return []
-    return list(positions)
+    return [p for p in positions if p.magic == MAGIC]
 
 
 def calculate_lot_size(price: float, sl: float) -> float:
@@ -196,7 +200,7 @@ def open_trade(direction: str, sl: float, tp: float) -> dict:
         "sl":        sl,
         "tp":        tp,
         "deviation": 10,
-        "magic":     20250314,
+        "magic":     MAGIC,
         "comment":   "ForexAIBot",
         "type_time": mt5.ORDER_TIME_GTC,
         "type_filling": mt5.ORDER_FILLING_IOC,
@@ -251,6 +255,8 @@ def get_closed_trades(lookback_hours: int = 24) -> list:
             continue
         if d.entry != mt5.DEAL_ENTRY_OUT:   # solo deal di chiusura
             continue
+        if d.magic != MAGIC:                 # solo deal di questo bot
+            continue
         closed.append({
             "ticket":      d.position_id,   # ticket della posizione originale
             "deal_id":     d.ticket,
@@ -286,7 +292,7 @@ def close_position(ticket: int) -> dict:
         "position":     pos.ticket,
         "price":        price,
         "deviation":    10,
-        "magic":        20250314,
+        "magic":        MAGIC,
         "comment":      "ForexAIBot_exit",
         "type_filling": mt5.ORDER_FILLING_IOC,
     }

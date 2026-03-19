@@ -1,0 +1,24 @@
+[
+  {
+    "timestamp": "2026-03-19T20:13:17.353414+00:00",
+    "symbol": "EURUSD",
+    "decision": "HOLD",
+    "confidence": 0,
+    "price": 1.15846,
+    "sl": null,
+    "tp": null,
+    "lot": null,
+    "technical_score": null,
+    "fundamental_score": null,
+    "market_regime": null,
+    "initial_decision": null,
+    "decision_changed": null,
+    "reasoning": "Pre-filtro scalp: Nessun crossover EMA recente (EMA_diff=0.00256)",
+    "devil_advocate": null,
+    "tech_brief": null,
+    "news_brief": null,
+    "rr_ratio": null,
+    "executed": false,
+    "ticket": null
+  }
+]

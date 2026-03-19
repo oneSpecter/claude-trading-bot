@@ -20,5 +20,16 @@
     "strategy": "ema_rsi_ai_main",
     "params": {},
     "enabled": true
+  },
+  {
+    "bot_id": "eurusd_scalp",
+    "symbol": "EURUSD",
+    "symbol_base": "EUR",
+    "symbol_quote": "USD",
+    "central_bank_base": "BCE (Banca Centrale Europea)",
+    "central_bank_quote": "Federal Reserve (Fed)",
+    "strategy": "ema_rsi_ai_scalp",
+    "params": {},
+    "enabled": true
   }
 ]
